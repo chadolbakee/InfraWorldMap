@@ -443,13 +443,18 @@ async function refreshNews(){
   refreshBtn.disabled=true;
   try{
     const q=encodeURIComponent(selected.join(","));
-    const res=await fetch("/api/news?countries="+q);
+    const res=await fetch("/api/news?countries="+q,{cache:"no-store"});
+    if(!res.ok){ throw new Error("서버 응답 "+res.status); }
     latestData=await res.json();
     const t=new Date().toLocaleTimeString("ko-KR");
     statusText.textContent="마지막 업데이트 "+t;
     detectAndAlert();
   }catch(e){
-    statusText.textContent="수집 실패: "+e.message;
+    // "Failed to fetch" = 서버(API)에 아예 못 닿음: 로컬이면 server.py 실행 필요
+    const msg = /fetch/i.test(e.message)
+      ? "API 연결 실패 — 서버(server.py) 실행 여부나 배포 상태를 확인하세요"
+      : e.message;
+    statusText.textContent="수집 실패: "+msg;
   }
   refreshBtn.disabled=false;
   renderAlertList();

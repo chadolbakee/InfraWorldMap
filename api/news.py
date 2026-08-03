@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 MAX_ARTICLES = 8
 MAX_AGE_HOURS = 48
 CACHE_TTL = 300
-REQUEST_TIMEOUT = 8   # 서버리스 함수 실행시간 제한 때문에 여유있게 짧게
+REQUEST_TIMEOUT = 6   # 서버리스 함수 실행시간 제한 때문에 여유있게 짧게
 
 CRITICAL_KEYWORDS = [
     "earthquake", "지진", "magnitude", "tsunami", "쓰나미", "지진해일", "해일",
@@ -216,32 +216,52 @@ class handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        qs = urllib.parse.parse_qs(parsed.query)
-        countries = qs.get("countries", [""])[0]
-        names = [c.strip() for c in countries.split(",") if c.strip()]
-
-        results = {}
-        lock = threading.Lock()
-
-        def work(name):
-            data = get_country_cached(name)
-            with lock:
-                results[name] = data
-
-        threads = []
-        for n in names[:15]:  # 서버리스 실행시간 한도 보호
-            t = threading.Thread(target=work, args=(n,))
-            t.start()
-            threads.append(t)
-        for t in threads:
-            t.join()
-
-        body = json.dumps(results, ensure_ascii=False).encode("utf-8")
-        self.send_response(200)
+    def _write_json(self, code, obj):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_GET(self):
+        try:
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            countries = qs.get("countries", [""])[0]
+            names = [c.strip() for c in countries.split(",") if c.strip()]
+
+            # 파라미터 없이 호출 -> 헬스체크 (함수 생존 확인용)
+            if not names:
+                self._write_json(200, {
+                    "ok": True,
+                    "message": "news function is alive",
+                    "usage": "/api/news?countries=Japan,United States",
+                })
+                return
+
+            results = {}
+            lock = threading.Lock()
+
+            def work(name):
+                try:
+                    data = get_country_cached(name)
+                except Exception as e:  # noqa: BLE001
+                    data = {"country": name, "level": "unknown",
+                            "error": str(e), "articles": [], "count": 0}
+                with lock:
+                    results[name] = data
+
+            threads = []
+            for n in names[:15]:  # 서버리스 실행시간 한도 보호
+                t = threading.Thread(target=work, args=(n,))
+                t.start()
+                threads.append(t)
+            for t in threads:
+                t.join()
+
+            self._write_json(200, results)
+        except Exception as e:  # noqa: BLE001 - 절대 HTML 에러페이지로 죽지 않게
+            self._write_json(500, {"error": "internal", "detail": str(e)})
