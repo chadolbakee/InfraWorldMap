@@ -85,6 +85,79 @@ def looks_historical(text):
     return False
 
 
+# 지명 필터: 언론사명(예: Yahoo News Singapore)만으로 걸린 엉뚱한 지역 기사 제외.
+# 헤드라인 본문에 그 나라/도시가 실제 언급된 기사만 남긴다.
+LOCATION_ALIASES = {
+    "South Korea": ["south korea", "korea", "korean", "seoul", "한국", "대한민국", "서울"],
+    "Japan": ["japan", "japanese", "tokyo", "osaka", "일본", "도쿄"],
+    "China": ["china", "chinese", "beijing", "shanghai", "중국", "베이징", "상하이"],
+    "Taiwan": ["taiwan", "taiwanese", "taipei", "대만", "타이완", "타이베이"],
+    "Hong Kong": ["hong kong", "hongkong", "홍콩"],
+    "Singapore": ["singapore", "singaporean", "싱가포르"],
+    "India": ["india", "indian", "delhi", "mumbai", "인도"],
+    "Indonesia": ["indonesia", "indonesian", "jakarta", "인도네시아", "자카르타"],
+    "Vietnam": ["vietnam", "vietnamese", "hanoi", "베트남", "하노이"],
+    "Thailand": ["thailand", "thai", "bangkok", "태국", "방콕"],
+    "Philippines": ["philippines", "philippine", "filipino", "manila", "필리핀", "마닐라"],
+    "Malaysia": ["malaysia", "malaysian", "kuala lumpur", "말레이시아"],
+    "Australia": ["australia", "australian", "sydney", "melbourne", "canberra", "호주"],
+    "United States": ["united states", "u.s.", "u.s.a", "america", "american",
+                       "washington", "new york", "california", "texas", "florida", "미국"],
+    "Canada": ["canada", "canadian", "ottawa", "toronto", "vancouver", "캐나다"],
+    "Mexico": ["mexico", "mexican", "멕시코"],
+    "Brazil": ["brazil", "brazilian", "brasilia", "sao paulo", "브라질"],
+    "Chile": ["chile", "chilean", "santiago", "칠레"],
+    "Argentina": ["argentina", "argentine", "buenos aires", "아르헨티나"],
+    "United Kingdom": ["united kingdom", "u.k.", "britain", "british", "england",
+                        "london", "scotland", "wales", "영국", "런던"],
+    "Germany": ["germany", "german", "berlin", "munich", "독일", "베를린"],
+    "France": ["france", "french", "paris", "프랑스", "파리"],
+    "Netherlands": ["netherlands", "dutch", "amsterdam", "네덜란드"],
+    "Spain": ["spain", "spanish", "madrid", "barcelona", "스페인", "마드리드"],
+    "Italy": ["italy", "italian", "rome", "milan", "이탈리아", "로마"],
+    "Ireland": ["ireland", "irish", "dublin", "아일랜드"],
+    "Poland": ["poland", "polish", "warsaw", "폴란드"],
+    "Sweden": ["sweden", "swedish", "stockholm", "스웨덴"],
+    "Turkey": ["turkey", "turkish", "türkiye", "istanbul", "ankara", "튀르키예", "터키"],
+    "Saudi Arabia": ["saudi", "riyadh", "jeddah", "사우디"],
+    "United Arab Emirates": ["united arab emirates", "uae", "dubai", "abu dhabi",
+                             "아랍에미리트", "두바이"],
+    "Israel": ["israel", "israeli", "tel aviv", "jerusalem", "이스라엘"],
+    "Egypt": ["egypt", "egyptian", "cairo", "이집트", "카이로"],
+    "South Africa": ["south africa", "south african", "johannesburg", "cape town",
+                     "남아프리카", "남아공"],
+    "Nigeria": ["nigeria", "nigerian", "lagos", "abuja", "나이지리아"],
+    "Russia": ["russia", "russian", "moscow", "러시아", "모스크바"],
+    "Ukraine": ["ukraine", "ukrainian", "kyiv", "kiev", "우크라이나", "키이우", "키예프"],
+}
+
+
+def _loc_pattern(alias):
+    if re.search(r"[가-힣]", alias):
+        return re.compile(re.escape(alias))
+    esc = re.escape(alias)
+    lead = r"\b" if alias[0].isalnum() else ""
+    trail = r"\b" if alias[-1].isalnum() else ""
+    return re.compile(lead + esc + trail, re.I)
+
+
+_LOC_PATS = {c: [_loc_pattern(a) for a in aliases]
+             for c, aliases in LOCATION_ALIASES.items()}
+
+
+def strip_source(title, source):
+    if source and title.endswith(source):
+        return title[:-len(source)].rstrip().rstrip("-–—·|").rstrip()
+    return title
+
+
+def mentions_country(text, country):
+    pats = _LOC_PATS.get(country)
+    if not pats:
+        return country.lower() in text.lower()
+    return any(p.search(text) for p in pats)
+
+
 COUNTRY_LOCALE = {
     "South Korea": ("ko", "KR", "KR:ko"),
     "Japan":       ("ja", "JP", "JP:ja"),
@@ -172,6 +245,10 @@ def fetch_country(country):
             source_el = item.find("source")
             source = _clean(source_el.text) if source_el is not None else ""
             if not title:
+                continue
+            # 언론사명만으로 걸린 엉뚱한 지역 기사 제외
+            headline = strip_source(title, source)
+            if not mentions_country(headline, country):
                 continue
             age = parse_age_hours(pub)
             if age is None or age > MAX_AGE_HOURS:
