@@ -85,6 +85,31 @@ def looks_historical(text):
     return False
 
 
+# 스포츠 / 연예 / 가십 맥락 -> 비유적 위험 키워드를 실제 재난으로 오인하지 않게 강등
+NOISE_KEYWORDS = [
+    "football", "soccer", "축구", "basketball", "농구", "baseball", "야구",
+    "world cup", "월드컵", "olympic", "올림픽", "league", "리그",
+    "fans", "striker", "midfielder", "goalkeeper", "transfer window",
+    "river plate", "boca juniors", "real madrid", "manchester united",
+    "derby", "playoff", "플레이오프", "nba", "nfl", "mlb",
+    "trophy", "tournament", "championship", "선수권", "coach",
+    "rising star", "the story of", "idol", "아이돌", "celebrity",
+    "가수", "rapper", "influencer",
+]
+_NOISE_PATS = _compile(NOISE_KEYWORDS)
+
+
+def looks_noise(text):
+    for _kw, pat in _NOISE_PATS:
+        if pat.search(text):
+            return True
+    return False
+
+
+def should_demote(text):
+    return looks_historical(text) or looks_noise(text)
+
+
 # 지명 필터: 언론사명(예: Yahoo News Singapore)만으로 걸린 엉뚱한 지역 기사 제외.
 # 헤드라인 본문에 그 나라/도시가 실제 언급된 기사만 남긴다.
 LOCATION_ALIASES = {
@@ -210,13 +235,13 @@ def parse_age_hours(pub_str):
 
 
 def classify(text):
-    # 위험 키워드가 걸려도 과거/회고/창작물 맥락이면 normal 로 강등
+    # 위험 키워드가 걸려도 과거/창작물/스포츠/연예 맥락이면 normal 로 강등
     for kw, pat in _CRIT_PATS:
         if pat.search(text):
-            return ("normal", None) if looks_historical(text) else ("critical", kw)
+            return ("normal", None) if should_demote(text) else ("critical", kw)
     for kw, pat in _WARN_PATS:
         if pat.search(text):
-            return ("normal", None) if looks_historical(text) else ("warning", kw)
+            return ("normal", None) if should_demote(text) else ("warning", kw)
     return "normal", None
 
 
@@ -253,7 +278,8 @@ def fetch_country(country):
             age = parse_age_hours(pub)
             if age is None or age > MAX_AGE_HOURS:
                 continue
-            sev, kw = classify(title + " " + desc)
+            # 심각도는 순수 헤드라인으로만 판정 (요약은 관련기사·언론사명이 섞임)
+            sev, kw = classify(headline)
             if level_rank[sev] > level_rank[worst]:
                 worst = sev
             articles.append({

@@ -114,6 +114,38 @@ def looks_historical(text):
     return False
 
 
+# 스포츠 / 연예 / 가십 맥락 신호
+#  "earthquake(지각변동)", "war(전쟁)" 등을 축구·연예 기사에서 비유적으로 쓰는 걸
+#  실제 재난으로 오인하지 않도록 강등한다.
+#  예) "River Plate fans declare war", "Argentina's rising star"
+NOISE_KEYWORDS = [
+    # 스포츠
+    "football", "soccer", "축구", "basketball", "농구", "baseball", "야구",
+    "world cup", "월드컵", "olympic", "올림픽", "league", "리그",
+    "fans", "striker", "midfielder", "goalkeeper", "transfer window",
+    "river plate", "boca juniors", "real madrid", "manchester united",
+    "derby", "playoff", "플레이오프", "nba", "nfl", "mlb",
+    "trophy", "tournament", "championship", "선수권", "coach",
+    # 연예 / 가십 / 인물
+    "rising star", "the story of", "idol", "아이돌", "celebrity",
+    "가수", "rapper", "influencer",
+]
+_NOISE_PATS = _compile(NOISE_KEYWORDS)
+
+
+def looks_noise(text):
+    """스포츠/연예/가십 등 '실제 재난이 아닌' 맥락이면 True -> 경고 강등."""
+    for _kw, pat in _NOISE_PATS:
+        if pat.search(text):
+            return True
+    return False
+
+
+def should_demote(text):
+    """위험 키워드가 걸려도 실제 현재 사건이 아니면 True (과거·창작물·스포츠·연예)."""
+    return looks_historical(text) or looks_noise(text)
+
+
 # ---------------------------------------------------------------------------
 # 지명 필터
 #  검색어(국가명)가 기사 '내용'이 아니라 '언론사 이름'(예: Yahoo News Singapore)
@@ -250,16 +282,16 @@ def parse_age_hours(pub_str):
 
 
 def classify(text):
-    """제목/요약 텍스트의 심각도 반환: (level, matched_keyword).
+    """헤드라인의 심각도 반환: (level, matched_keyword).
 
-    위험 키워드가 걸려도 과거/회고/창작물 맥락이면 normal 로 강등한다.
+    위험 키워드가 걸려도 과거/창작물/스포츠/연예 맥락이면 normal 로 강등한다.
     """
     for kw, pat in _CRIT_PATS:
         if pat.search(text):
-            return ("normal", None) if looks_historical(text) else ("critical", kw)
+            return ("normal", None) if should_demote(text) else ("critical", kw)
     for kw, pat in _WARN_PATS:
         if pat.search(text):
-            return ("normal", None) if looks_historical(text) else ("warning", kw)
+            return ("normal", None) if should_demote(text) else ("warning", kw)
     return "normal", None
 
 
@@ -301,7 +333,9 @@ def fetch_country(country):
             age = parse_age_hours(pub)
             if age is None or age > MAX_AGE_HOURS:
                 continue
-            sev, kw = classify(title + " " + desc)
+            # 요약(description)은 관련기사·언론사명이 섞여 지저분하므로
+            # 심각도 판정은 순수 헤드라인으로만 한다.
+            sev, kw = classify(headline)
             if level_rank[sev] > level_rank[worst]:
                 worst = sev
             articles.append({
