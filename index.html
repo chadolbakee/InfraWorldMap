@@ -386,7 +386,9 @@ function detectAndAlert(){
     d.articles.forEach(a=>{
       if(a.link && !seenLinks.has(a.link)){
         seenLinks.add(a.link);
-        if(baselineDone){
+        // 새 기사여도 '경고/주의' 급만 알림 (정상 뉴스·과거 회고 기사는 조용히)
+        const alertWorthy = a.severity==="critical" || a.severity==="warning";
+        if(baselineDone && alertWorthy){
           alertedLinks.add(a.link);
           fresh.push({country:en, ko:NAME_KO[en]||en, article:a});
         }

@@ -62,6 +62,29 @@ def _compile(keywords):
 _CRIT_PATS = _compile(CRITICAL_KEYWORDS)
 _WARN_PATS = _compile(WARNING_KEYWORDS)
 
+# 과거 사건 / 회고 / 창작물 맥락 신호 -> 위험 키워드가 있어도 경고 강등
+HISTORICAL_KEYWORDS = [
+    "anniversary", "주년", "기념", "추모", "추도", "memorial", "commemorat",
+    "remembrance", "회고", "회상", "on this day", "years ago", "decades ago",
+    "veteran", "veterans", "참전", "documentary", "다큐멘터리", "다큐",
+    "archive", "archival", "history of", "armistice", "정전협정", "종전",
+    "film", "movie", "영화", "drama", "드라마", "novel", "소설",
+    "webtoon", "웹툰", "trailer", "예고편", "box office", "박스오피스",
+    "actor", "actress", "배우", "album", "앨범",
+]
+_HIST_PATS = _compile(HISTORICAL_KEYWORDS)
+_YEAR_RE = re.compile(r"\b(19\d{2})\b")
+
+
+def looks_historical(text):
+    if _YEAR_RE.search(text):
+        return True
+    for _kw, pat in _HIST_PATS:
+        if pat.search(text):
+            return True
+    return False
+
+
 COUNTRY_LOCALE = {
     "South Korea": ("ko", "KR", "KR:ko"),
     "Japan":       ("ja", "JP", "JP:ja"),
@@ -114,12 +137,13 @@ def parse_age_hours(pub_str):
 
 
 def classify(text):
+    # 위험 키워드가 걸려도 과거/회고/창작물 맥락이면 normal 로 강등
     for kw, pat in _CRIT_PATS:
         if pat.search(text):
-            return "critical", kw
+            return ("normal", None) if looks_historical(text) else ("critical", kw)
     for kw, pat in _WARN_PATS:
         if pat.search(text):
-            return "warning", kw
+            return ("normal", None) if looks_historical(text) else ("warning", kw)
     return "normal", None
 
 

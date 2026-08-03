@@ -83,6 +83,37 @@ def _compile(keywords):
 _CRIT_PATS = _compile(CRITICAL_KEYWORDS)
 _WARN_PATS = _compile(WARNING_KEYWORDS)
 
+# ---------------------------------------------------------------------------
+# 과거 사건 / 회고 / 창작물 맥락 신호
+#  위험 키워드(war, explosion 등)가 들어 있어도, 아래 맥락이면 '지금 벌어지는
+#  사건'이 아니라 과거 회고·기념·다큐·영화 등이므로 경고를 강등(normal)한다.
+#  예) "Vietnam War 50th anniversary", "Documentary on 1975 evacuation"
+# ---------------------------------------------------------------------------
+HISTORICAL_KEYWORDS = [
+    # 회고 / 기념 / 종전
+    "anniversary", "주년", "기념", "추모", "추도", "memorial", "commemorat",
+    "remembrance", "회고", "회상", "on this day", "years ago", "decades ago",
+    "veteran", "veterans", "참전", "documentary", "다큐멘터리", "다큐",
+    "archive", "archival", "history of", "armistice", "정전협정", "종전",
+    # 창작물 / 엔터
+    "film", "movie", "영화", "drama", "드라마", "novel", "소설",
+    "webtoon", "웹툰", "trailer", "예고편", "box office", "박스오피스",
+    "actor", "actress", "배우", "album", "앨범",
+]
+_HIST_PATS = _compile(HISTORICAL_KEYWORDS)
+_YEAR_RE = re.compile(r"\b(19\d{2})\b")   # 1900~1999년 언급 = 과거 사건 강력 신호
+
+
+def looks_historical(text):
+    """위험 키워드가 있어도 과거/회고/창작물 맥락이면 True -> 경고 강등."""
+    if _YEAR_RE.search(text):
+        return True
+    for _kw, pat in _HIST_PATS:
+        if pat.search(text):
+            return True
+    return False
+
+
 # 뉴스 검색 쿼리에 사용할 인프라/재난 키워드 (영어 위주 + 국가명)
 QUERY_TERMS = (
     'earthquake OR flood OR typhoon OR hurricane OR wildfire OR "power outage" '
@@ -138,13 +169,16 @@ def parse_age_hours(pub_str):
 
 
 def classify(text):
-    """제목/요약 텍스트의 심각도 반환: (level, matched_keyword)."""
+    """제목/요약 텍스트의 심각도 반환: (level, matched_keyword).
+
+    위험 키워드가 걸려도 과거/회고/창작물 맥락이면 normal 로 강등한다.
+    """
     for kw, pat in _CRIT_PATS:
         if pat.search(text):
-            return "critical", kw
+            return ("normal", None) if looks_historical(text) else ("critical", kw)
     for kw, pat in _WARN_PATS:
         if pat.search(text):
-            return "warning", kw
+            return ("normal", None) if looks_historical(text) else ("warning", kw)
     return "normal", None
 
 
