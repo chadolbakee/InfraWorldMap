@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>글로벌 인프라 자산 뉴스 모니터</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3;
+    --muted:#8b949e; --green:#2ea043; --yellow:#d29922; --red:#f85149;
+    --blue:#388bfd;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;font-family:'Segoe UI',system-ui,sans-serif;
+    background:var(--bg);color:var(--text);}
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #sidebar{width:340px;min-width:340px;background:var(--panel);
+    border-right:1px solid var(--border);display:flex;flex-direction:column;}
+  #map{flex:1;}
+  header{padding:16px;border-bottom:1px solid var(--border);}
+  header h1{font-size:16px;margin:0 0 4px;}
+  header p{margin:0;font-size:12px;color:var(--muted);}
+  .section{padding:14px 16px;border-bottom:1px solid var(--border);}
+  .section h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;
+    color:var(--muted);margin:0 0 10px;}
+  .country-picker{position:relative;}
+  .picker-box{background:var(--bg);border:1px solid var(--border);border-radius:6px;
+    padding:8px;min-height:38px;cursor:pointer;display:flex;flex-wrap:wrap;gap:6px;}
+  .picker-box:empty::before{content:'국가를 선택하세요…';color:var(--muted);font-size:13px;}
+  .chip{background:var(--blue);color:#fff;font-size:12px;padding:2px 8px;border-radius:12px;
+    display:inline-flex;align-items:center;gap:6px;}
+  .chip span{cursor:pointer;opacity:.8;}
+  .dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--panel);
+    border:1px solid var(--border);border-radius:6px;max-height:260px;overflow-y:auto;
+    z-index:1000;display:none;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+  .dropdown.open{display:block;}
+  .dropdown input{width:100%;padding:8px;border:none;border-bottom:1px solid var(--border);
+    background:var(--bg);color:var(--text);outline:none;}
+  .dropdown label{display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:13px;
+    cursor:pointer;}
+  .dropdown label:hover{background:var(--bg);}
+  .status-line{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);
+    margin-top:10px;}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);}
+  .dot.live{background:var(--green);box-shadow:0 0 0 0 rgba(46,160,67,.7);
+    animation:pulse 2s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(46,160,67,.6);}
+    70%{box-shadow:0 0 0 8px rgba(46,160,67,0);}100%{box-shadow:0 0 0 0 rgba(46,160,67,0);}}
+  #alertList{flex:1;overflow-y:auto;padding:0;}
+  .asset{border-bottom:1px solid var(--border);padding:12px 16px;cursor:pointer;}
+  .asset:hover{background:var(--bg);}
+  .asset-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .asset-name{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px;}
+  .lamp{width:12px;height:12px;border-radius:50%;flex-shrink:0;border:1px solid rgba(255,255,255,.15);}
+  .lamp.normal{background:var(--green);}
+  .lamp.warning{background:var(--yellow);}
+  .lamp.critical{background:var(--red);animation:blink 1s infinite;}
+  .lamp.unknown{background:#555;}
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:.25;}}
+  .badge{font-size:11px;padding:2px 7px;border-radius:10px;font-weight:600;}
+  .badge.critical{background:rgba(248,81,73,.15);color:var(--red);}
+  .badge.warning{background:rgba(210,153,34,.15);color:var(--yellow);}
+  .badge.normal{background:rgba(46,160,67,.15);color:var(--green);}
+  .badge.unknown{background:#333;color:var(--muted);}
+  .articles{margin-top:8px;display:none;}
+  .asset.expanded .articles{display:block;}
+  .article{font-size:12px;padding:6px 0;border-top:1px dashed var(--border);}
+  .article a{color:var(--text);text-decoration:none;}
+  .article a:hover{color:var(--blue);text-decoration:underline;}
+  .article .meta{color:var(--muted);font-size:11px;margin-top:2px;}
+  .sev-tag{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;}
+  .sev-tag.critical{background:var(--red);}
+  .sev-tag.warning{background:var(--yellow);}
+  .sev-tag.normal{background:var(--green);}
+  .empty{padding:24px 16px;color:var(--muted);font-size:13px;text-align:center;}
+  .leaflet-popup-content{font-size:13px;}
+  .legend{position:absolute;bottom:20px;right:20px;background:var(--panel);
+    border:1px solid var(--border);border-radius:8px;padding:10px 14px;z-index:500;font-size:12px;}
+  .legend div{display:flex;align-items:center;gap:8px;margin:3px 0;}
+  button.refresh{margin-top:10px;width:100%;padding:8px;background:var(--blue);color:#fff;
+    border:none;border-radius:6px;cursor:pointer;font-size:13px;}
+  button.refresh:hover{opacity:.9;}
+  button.refresh:disabled{opacity:.5;cursor:default;}
+  /* 알림 컨트롤 */
+  .notif-controls{display:flex;gap:14px;margin-top:10px;font-size:12px;color:var(--muted);}
+  .notif-controls label{display:flex;align-items:center;gap:5px;cursor:pointer;}
+  /* 토스트 */
+  #toastWrap{position:absolute;top:16px;right:16px;z-index:1200;display:flex;
+    flex-direction:column;gap:10px;max-width:320px;}
+  .toast{background:var(--panel);border:1px solid var(--border);border-left-width:4px;
+    border-radius:8px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.5);cursor:pointer;
+    animation:slidein .3s ease;}
+  .toast.critical{border-left-color:var(--red);}
+  .toast.warning{border-left-color:var(--yellow);}
+  .toast.normal{border-left-color:var(--blue);}
+  .toast .t-title{font-size:13px;font-weight:700;margin-bottom:4px;display:flex;
+    align-items:center;gap:6px;}
+  .toast .t-body{font-size:12px;color:var(--muted);line-height:1.4;}
+  @keyframes slidein{from{transform:translateX(30px);opacity:0;}to{transform:none;opacity:1;}}
+  .toast.fade{opacity:0;transform:translateX(30px);transition:.4s;}
+  /* NEW 뱃지 */
+  .new-badge{background:var(--red);color:#fff;font-size:9px;font-weight:700;
+    padding:1px 5px;border-radius:8px;margin-left:6px;vertical-align:middle;}
+  .asset.has-new .asset-name{color:#fff;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <header>
+      <h1>🌐 글로벌 인프라 자산 뉴스 모니터</h1>
+      <p>관리 자산 지역의 인프라 위협 뉴스를 5분마다 자동 감시</p>
+    </header>
+
+    <div class="section">
+      <h2>모니터링 지역 선택</h2>
+      <div class="country-picker">
+        <div class="picker-box" id="pickerBox"></div>
+        <div class="dropdown" id="dropdown">
+          <input type="text" id="countrySearch" placeholder="국가 검색…" />
+          <div id="countryOptions"></div>
+        </div>
+      </div>
+      <div class="status-line">
+        <span class="dot" id="liveDot"></span>
+        <span id="statusText">지역을 선택하면 감시를 시작합니다</span>
+      </div>
+      <button class="refresh" id="refreshBtn">지금 새로고침</button>
+      <div class="notif-controls">
+        <label><input type="checkbox" id="soundToggle" checked /> 🔊 소리</label>
+        <label><input type="checkbox" id="notifToggle" /> 🔔 데스크톱 알림</label>
+      </div>
+    </div>
+
+    <div class="section" style="padding-bottom:8px;">
+      <h2>자산 지역 경보 현황</h2>
+    </div>
+    <div id="alertList">
+      <div class="empty">감시할 국가를 선택하세요.</div>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div id="toastWrap"></div>
+</div>
+
+<div class="legend">
+  <div><span class="lamp normal"></span> 정상 (특이사항 없음)</div>
+  <div><span class="lamp warning"></span> 주의 (잠재 위험)</div>
+  <div><span class="lamp critical"></span> 경고 (심각 사건)</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ---------------------------------------------------------------------------
+// 국가 목록 (드롭다운) + 좌표
+// ---------------------------------------------------------------------------
+const COUNTRIES = [
+  ["South Korea","대한민국",37.55,126.98],
+  ["Japan","일본",35.68,139.69],
+  ["China","중국",39.90,116.40],
+  ["Taiwan","대만",25.03,121.56],
+  ["Hong Kong","홍콩",22.32,114.17],
+  ["Singapore","싱가포르",1.35,103.82],
+  ["India","인도",28.61,77.21],
+  ["Indonesia","인도네시아",-6.20,106.85],
+  ["Vietnam","베트남",21.03,105.85],
+  ["Thailand","태국",13.75,100.50],
+  ["Philippines","필리핀",14.60,120.98],
+  ["Malaysia","말레이시아",3.14,101.69],
+  ["Australia","호주",-33.87,151.21],
+  ["United States","미국",38.90,-77.04],
+  ["Canada","캐나다",45.42,-75.70],
+  ["Mexico","멕시코",19.43,-99.13],
+  ["Brazil","브라질",-23.55,-46.63],
+  ["Chile","칠레",-33.45,-70.66],
+  ["Argentina","아르헨티나",-34.60,-58.38],
+  ["United Kingdom","영국",51.51,-0.13],
+  ["Germany","독일",52.52,13.40],
+  ["France","프랑스",48.85,2.35],
+  ["Netherlands","네덜란드",52.37,4.90],
+  ["Spain","스페인",40.42,-3.70],
+  ["Italy","이탈리아",41.90,12.50],
+  ["Ireland","아일랜드",53.35,-6.26],
+  ["Poland","폴란드",52.23,21.01],
+  ["Sweden","스웨덴",59.33,18.07],
+  ["Turkey","튀르키예",41.01,28.98],
+  ["Saudi Arabia","사우디아라비아",24.71,46.68],
+  ["United Arab Emirates","아랍에미리트",25.20,55.27],
+  ["Israel","이스라엘",31.77,35.21],
+  ["Egypt","이집트",30.04,31.24],
+  ["South Africa","남아프리카공화국",-26.20,28.05],
+  ["Nigeria","나이지리아",6.52,3.38],
+  ["Russia","러시아",55.75,37.62],
+  ["Ukraine","우크라이나",50.45,30.52],
+];
+const NAME_KO = Object.fromEntries(COUNTRIES.map(c=>[c[0],c[1]]));
+const COORD = Object.fromEntries(COUNTRIES.map(c=>[c[0],[c[2],c[3]]]));
+
+const SEV_COLOR = {critical:"#f85149",warning:"#d29922",normal:"#2ea043",unknown:"#666"};
+const SEV_LABEL = {critical:"경고",warning:"주의",normal:"정상",unknown:"확인불가"};
+const REFRESH_MS = 5*60*1000;
+
+let selected = JSON.parse(localStorage.getItem("infra_countries")||"[]");
+let latestData = {};
+let markers = {};
+let refreshTimer = null;
+
+// --- 새 뉴스 알림용 상태 ---
+// 이전에 이미 본 기사 링크 (localStorage 에 유지 -> 재접속해도 기억)
+let seenLinks = new Set(JSON.parse(localStorage.getItem("infra_seen")||"[]"));
+let baselineDone = seenLinks.size > 0;   // 첫 사용자는 최초 1회는 알림 없이 기준만 설정
+let alertedLinks = new Set();            // 이번 세션에서 새로 뜬 기사 (NEW 뱃지용)
+
+// ---------------------------------------------------------------------------
+// 지도 초기화
+// ---------------------------------------------------------------------------
+const map = L.map("map",{worldCopyJump:true}).setView([25,20],2);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{
+  attribution:"© OpenStreetMap, © CARTO", subdomains:"abcd", maxZoom:8
+}).addTo(map);
+
+// ---------------------------------------------------------------------------
+// 드롭다운
+// ---------------------------------------------------------------------------
+const pickerBox = document.getElementById("pickerBox");
+const dropdown = document.getElementById("dropdown");
+const optionsEl = document.getElementById("countryOptions");
+const searchEl = document.getElementById("countrySearch");
+
+function renderOptions(filter=""){
+  const f = filter.toLowerCase();
+  optionsEl.innerHTML = "";
+  COUNTRIES.filter(c=>c[0].toLowerCase().includes(f)||c[1].includes(filter))
+    .forEach(c=>{
+      const [en,ko] = c;
+      const lbl = document.createElement("label");
+      const chk = document.createElement("input");
+      chk.type="checkbox"; chk.value=en; chk.checked=selected.includes(en);
+      chk.addEventListener("change",()=>toggleCountry(en,chk.checked));
+      lbl.appendChild(chk);
+      lbl.appendChild(document.createTextNode(` ${ko} (${en})`));
+      optionsEl.appendChild(lbl);
+    });
+}
+function renderChips(){
+  pickerBox.innerHTML="";
+  selected.forEach(en=>{
+    const chip=document.createElement("span");
+    chip.className="chip";
+    chip.innerHTML=`${NAME_KO[en]||en} <span data-c="${en}">✕</span>`;
+    chip.querySelector("span").addEventListener("click",(e)=>{
+      e.stopPropagation(); toggleCountry(en,false);
+    });
+    pickerBox.appendChild(chip);
+  });
+}
+function toggleCountry(en,on){
+  if(on && !selected.includes(en)) selected.push(en);
+  if(!on) selected = selected.filter(x=>x!==en);
+  localStorage.setItem("infra_countries",JSON.stringify(selected));
+  renderChips(); renderOptions(searchEl.value);
+  syncMarkers();
+  refreshNews();
+}
+pickerBox.addEventListener("click",()=>dropdown.classList.toggle("open"));
+searchEl.addEventListener("input",()=>renderOptions(searchEl.value));
+document.addEventListener("click",(e)=>{
+  if(!e.target.closest(".country-picker")) dropdown.classList.remove("open");
+});
+
+// ---------------------------------------------------------------------------
+// 마커 관리
+// ---------------------------------------------------------------------------
+function syncMarkers(){
+  // 제거된 국가 마커 삭제
+  Object.keys(markers).forEach(en=>{
+    if(!selected.includes(en)){ map.removeLayer(markers[en]); delete markers[en]; }
+  });
+  // 새 국가 마커 추가
+  selected.forEach(en=>{
+    if(!markers[en] && COORD[en]){
+      const m = L.circleMarker(COORD[en],{
+        radius:9, color:"#fff", weight:1.5, fillColor:SEV_COLOR.unknown, fillOpacity:.9
+      }).addTo(map);
+      m.on("click",()=>{
+        map.setView(COORD[en],4);
+        const el=document.getElementById("asset-"+cssId(en));
+        if(el){ el.classList.add("expanded"); el.scrollIntoView({behavior:"smooth"}); }
+      });
+      markers[en]=m;
+    }
+  });
+  updateMarkerStyles();
+}
+function updateMarkerStyles(){
+  selected.forEach(en=>{
+    const m=markers[en]; if(!m) return;
+    const d=latestData[en];
+    const lvl = d ? d.level : "unknown";
+    m.setStyle({fillColor:SEV_COLOR[lvl]||SEV_COLOR.unknown});
+    m.setRadius(lvl==="critical"?13:9);
+    const ko=NAME_KO[en]||en;
+    let html=`<b>${ko}</b><br>상태: <b style="color:${SEV_COLOR[lvl]}">${SEV_LABEL[lvl]||"?"}</b>`;
+    if(d && d.articles && d.articles.length){
+      html+=`<br><small>${d.critical_count||0} 심각 · ${d.warning_count||0} 주의 · 총 ${d.count}건</small>`;
+    }
+    m.bindPopup(html);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 뉴스 가져오기
+// ---------------------------------------------------------------------------
+const statusText=document.getElementById("statusText");
+const liveDot=document.getElementById("liveDot");
+const refreshBtn=document.getElementById("refreshBtn");
+const soundToggle=document.getElementById("soundToggle");
+const notifToggle=document.getElementById("notifToggle");
+const toastWrap=document.getElementById("toastWrap");
+
+// 데스크톱 알림 켜면 권한 요청
+notifToggle.addEventListener("change",()=>{
+  if(notifToggle.checked){
+    if(!("Notification" in window)){
+      alert("이 브라우저는 데스크톱 알림을 지원하지 않습니다.");
+      notifToggle.checked=false; return;
+    }
+    Notification.requestPermission().then(p=>{
+      if(p!=="granted") notifToggle.checked=false;
+    });
+  }
+});
+
+// Web Audio 로 비프음 생성 (외부 파일 불필요)
+let audioCtx=null;
+function beep(level){
+  if(!soundToggle.checked) return;
+  try{
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    const seq = level==="critical" ? [880,0,880,0,880] : [660];
+    let t=audioCtx.currentTime;
+    seq.forEach(f=>{
+      if(f>0){
+        const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+        o.frequency.value=f; o.type="sine";
+        g.gain.setValueAtTime(0.001,t);
+        g.gain.exponentialRampToValueAtTime(0.25,t+0.02);
+        g.gain.exponentialRampToValueAtTime(0.001,t+0.15);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(t); o.stop(t+0.16);
+      }
+      t+=0.18;
+    });
+  }catch(e){/* 오디오 정책상 사용자 상호작용 전이면 무시 */}
+}
+
+// 화면 토스트
+function showToast(level,title,body,countryEn){
+  const el=document.createElement("div");
+  el.className="toast "+level;
+  const icon = level==="critical"?"🔴":level==="warning"?"🟡":"🔵";
+  el.innerHTML=`<div class="t-title">${icon} ${title}</div><div class="t-body">${body}</div>`;
+  el.addEventListener("click",()=>{
+    if(countryEn && COORD[countryEn]) map.setView(COORD[countryEn],4);
+    const a=document.getElementById("asset-"+cssId(countryEn));
+    if(a){a.classList.add("expanded");a.scrollIntoView({behavior:"smooth"});}
+    el.remove();
+  });
+  toastWrap.appendChild(el);
+  setTimeout(()=>{el.classList.add("fade");setTimeout(()=>el.remove(),400);},9000);
+}
+
+// 데스크톱 알림
+function desktopNotify(title,body){
+  if(!notifToggle.checked) return;
+  if(!("Notification" in window) || Notification.permission!=="granted") return;
+  try{ new Notification(title,{body}); }catch(e){}
+}
+
+// 새로 들어온 기사 탐지 + 알림
+function detectAndAlert(){
+  const fresh=[]; // {country, ko, article}
+  selected.forEach(en=>{
+    const d=latestData[en]; if(!d||!d.articles) return;
+    d.articles.forEach(a=>{
+      if(a.link && !seenLinks.has(a.link)){
+        seenLinks.add(a.link);
+        if(baselineDone){
+          alertedLinks.add(a.link);
+          fresh.push({country:en, ko:NAME_KO[en]||en, article:a});
+        }
+      }
+    });
+  });
+  // seenLinks 저장 (너무 커지지 않게 최근 800개만)
+  localStorage.setItem("infra_seen",
+    JSON.stringify(Array.from(seenLinks).slice(-800)));
+  baselineDone=true;
+  if(fresh.length===0) return;
+
+  // 국가별로 묶어서 토스트 (심각도 높은 것 우선)
+  const byCountry={};
+  fresh.forEach(f=>{(byCountry[f.country]=byCountry[f.country]||[]).push(f);});
+  const rank={critical:0,warning:1,normal:2};
+  let anyCritical=false, anyWarning=false;
+  Object.keys(byCountry).forEach(en=>{
+    const items=byCountry[en].sort((a,b)=>rank[a.article.severity]-rank[b.article.severity]);
+    const top=items[0].article;
+    const lvl=top.severity;
+    if(lvl==="critical") anyCritical=true;
+    if(lvl==="warning") anyWarning=true;
+    const ko=items[0].ko;
+    const cCnt=items.filter(x=>x.article.severity==="critical").length;
+    const label = cCnt>0 ? `새 경고 뉴스 ${cCnt}건` : `새 뉴스 ${items.length}건`;
+    const body = top.title.slice(0,80) + (items.length>1?` 외 ${items.length-1}건`:"");
+    showToast(lvl, `${ko} · ${label}`, body, en);
+    desktopNotify(`⚠ ${ko} · ${label}`, top.title);
+  });
+  beep(anyCritical?"critical":(anyWarning?"warning":"normal"));
+}
+
+function cssId(s){return s.replace(/[^a-zA-Z]/g,"");}
+function ago(h){
+  if(h==null) return "";
+  if(h<1) return Math.max(1,Math.round(h*60))+"분 전";
+  if(h<24) return Math.round(h)+"시간 전";
+  return Math.round(h/24)+"일 전";
+}
+
+async function refreshNews(){
+  if(refreshTimer){clearTimeout(refreshTimer);}
+  if(selected.length===0){
+    latestData={}; renderAlertList();
+    statusText.textContent="지역을 선택하면 감시를 시작합니다";
+    liveDot.classList.remove("live");
+    return;
+  }
+  liveDot.classList.add("live");
+  statusText.textContent="뉴스 수집 중…";
+  refreshBtn.disabled=true;
+  try{
+    const q=encodeURIComponent(selected.join(","));
+    const res=await fetch("/api/news?countries="+q);
+    latestData=await res.json();
+    const t=new Date().toLocaleTimeString("ko-KR");
+    statusText.textContent="마지막 업데이트 "+t;
+    detectAndAlert();
+  }catch(e){
+    statusText.textContent="수집 실패: "+e.message;
+  }
+  refreshBtn.disabled=false;
+  renderAlertList();
+  updateMarkerStyles();
+  refreshTimer=setTimeout(refreshNews,REFRESH_MS);
+}
+refreshBtn.addEventListener("click",refreshNews);
+
+// ---------------------------------------------------------------------------
+// 사이드바 경보 리스트
+// ---------------------------------------------------------------------------
+const alertList=document.getElementById("alertList");
+const sevOrder={critical:0,warning:1,normal:2,unknown:3};
+
+function renderAlertList(){
+  if(selected.length===0){
+    alertList.innerHTML='<div class="empty">감시할 국가를 선택하세요.</div>';
+    return;
+  }
+  const sorted=[...selected].sort((a,b)=>{
+    const la=(latestData[a]?.level)||"unknown";
+    const lb=(latestData[b]?.level)||"unknown";
+    return sevOrder[la]-sevOrder[lb];
+  });
+  alertList.innerHTML="";
+  sorted.forEach(en=>{
+    const d=latestData[en];
+    const lvl=d?d.level:"unknown";
+    const ko=NAME_KO[en]||en;
+    const wrap=document.createElement("div");
+    const hasNew = d && d.articles && d.articles.some(a=>alertedLinks.has(a.link));
+    wrap.className="asset"+(hasNew?" has-new":""); wrap.id="asset-"+cssId(en);
+    let arts="";
+    if(d && d.articles && d.articles.length){
+      arts=d.articles.map(a=>{
+        const isNew = a.link && alertedLinks.has(a.link);
+        return `
+        <div class="article">
+          <span class="sev-tag ${a.severity}"></span>
+          <a href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+          ${isNew?'<span class="new-badge">NEW</span>':''}
+          <div class="meta">${a.source||""} · ${ago(a.age_hours)}</div>
+        </div>`;}).join("");
+    }else if(d && d.error){
+      arts=`<div class="article meta">수집 오류: ${d.error}</div>`;
+    }else if(d){
+      arts=`<div class="article meta">관련 뉴스 없음</div>`;
+    }else{
+      arts=`<div class="article meta">불러오는 중…</div>`;
+    }
+    const cnt = d ? `${d.count||0}건` : "";
+    wrap.innerHTML=`
+      <div class="asset-head">
+        <div class="asset-name"><span class="lamp ${lvl}"></span>${ko}</div>
+        <span class="badge ${lvl}">${SEV_LABEL[lvl]||"?"}</span>
+      </div>
+      <div class="meta" style="font-size:11px;color:var(--muted);margin-top:4px;">
+        ${d?`심각 ${d.critical_count||0} · 주의 ${d.warning_count||0} · 총 ${cnt}`:""}
+      </div>
+      <div class="articles">${arts}</div>`;
+    wrap.querySelector(".asset-head").addEventListener("click",()=>{
+      wrap.classList.toggle("expanded");
+    });
+    alertList.appendChild(wrap);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 시작
+// ---------------------------------------------------------------------------
+renderOptions();
+renderChips();
+syncMarkers();
+refreshNews();
+</script>
+</body>
+</html>
