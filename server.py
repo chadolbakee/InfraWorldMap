@@ -147,6 +147,12 @@ NOISE_KEYWORDS = [
     # 연예 / 가십 / 인물
     "rising star", "the story of", "idol", "아이돌", "celebrity",
     "가수", "rapper", "influencer",
+    # 비즈니스/마케팅 경쟁 비유 ("war"를 시장 경쟁·유행에 비유)
+    "price war", "trade war", "tariff war", "burger war", "streaming war",
+    "bidding war", "turf war", "culture war", "war of words", "fare war",
+    "console war", "format war", "talent war", "chip war", "brand war",
+    "price battle", "burger", "noodles", "market share", "startup",
+    "ipo", "e-commerce", "quarterly earnings",
 ]
 _NOISE_PATS = _compile(NOISE_KEYWORDS)
 
