@@ -36,37 +36,55 @@ MAX_AGE_HOURS = 48        # 이 시간보다 오래된 기사는 버림 (경고�
 #    (안 그러면 "war"가 "software"/"warning" 안에서 오탐)
 #    한글은 단어 경계 개념이 없으므로 부분 문자열로 매칭.
 # ---------------------------------------------------------------------------
-CRITICAL_KEYWORDS = [
-    # 자연재해 (급성)
-    "earthquake", "지진", "magnitude", "tsunami", "쓰나미", "지진해일", "해일",
-    "typhoon", "태풍", "hurricane", "허리케인", "cyclone",
-    "flooding", "floods", "홍수", "침수", "wildfire", "wildfires", "산불",
-    "volcano", "화산", "eruption", "landslide", "산사태", "mudslide",
-    # 인프라 직접 타격
-    "power outage", "blackout", "정전", "grid failure", "grid collapse",
-    "explosion", "explosions", "폭발", "building collapse", "bridge collapse",
-    "붕괴", "derailment", "pipeline rupture", "송유관",
-    "data center outage", "데이터센터 화재", "submarine cable cut",
-    # 안전/보안 (급성)
-    "airstrike", "air strike", "공습", "missile strike", "invasion", "침공",
-    "terror attack", "테러", "coup", "쿠데타", "sabotage",
-    "evacuation ordered", "evacuate", "대피령", "대피",
-    "state of emergency", "비상사태", "death toll", "meltdown",
-]
+# 위험 유형별로 (한국어 태그 -> 키워드들) 로 묶는다.
+#  어떤 언어의 키워드가 걸리든 기사 옆에 한국어 태그(#홍수 등)를 붙이기 위함.
+CRITICAL_CATEGORIES = {
+    "지진":     ["earthquake", "지진", "magnitude"],
+    "쓰나미":   ["tsunami", "쓰나미", "지진해일", "해일"],
+    "태풍":     ["typhoon", "태풍", "hurricane", "허리케인", "cyclone"],
+    "홍수":     ["flooding", "floods", "홍수", "침수"],
+    "산불":     ["wildfire", "wildfires", "산불"],
+    "화산":     ["volcano", "화산", "eruption"],
+    "산사태":   ["landslide", "산사태", "mudslide"],
+    "정전":     ["power outage", "blackout", "정전", "grid failure", "grid collapse"],
+    "폭발":     ["explosion", "explosions", "폭발"],
+    "붕괴":     ["building collapse", "bridge collapse", "붕괴", "derailment"],
+    "인프라피해": ["pipeline rupture", "송유관", "data center outage",
+                 "데이터센터 화재", "submarine cable cut"],
+    "공습":     ["airstrike", "air strike", "공습", "missile strike",
+                 "invasion", "침공"],
+    "테러":     ["terror attack", "테러", "sabotage"],
+    "쿠데타":   ["coup", "쿠데타"],
+    "대피":     ["evacuation ordered", "evacuate", "대피령", "대피"],
+    "비상사태": ["state of emergency", "비상사태"],
+    "사상자":   ["death toll"],
+    "원전사고": ["meltdown"],
+}
 
-WARNING_KEYWORDS = [
-    # 기상/환경
-    "storm", "폭풍", "heavy rain", "폭우", "heatwave", "heat wave", "폭염",
-    "drought", "가뭄", "flood warning", "홍수 주의", "storm warning",
-    # 사회/노동
-    "protest", "시위", "strike", "파업", "unrest", "riot", "폭동",
-    # 지정학 (상시 배경 소음이라 주의 단계로)
-    "war", "전쟁", "missile", "미사일", "sanction", "제재",
-    "tension", "긴장", "military", "border clash",
-    # 보안/운영
-    "cyberattack", "사이버공격", "ransomware", "랜섬웨어", "data breach",
-    "유출", "outage", "장애", "disruption", "차질", "shortage", "부족",
-]
+WARNING_CATEGORIES = {
+    "폭풍":     ["storm", "폭풍", "storm warning"],
+    "폭우":     ["heavy rain", "폭우"],
+    "폭염":     ["heatwave", "heat wave", "폭염"],
+    "가뭄":     ["drought", "가뭄"],
+    "홍수주의": ["flood warning", "홍수 주의"],
+    "시위":     ["protest", "시위", "unrest", "riot", "폭동"],
+    "파업":     ["strike", "파업"],
+    "전쟁":     ["war", "전쟁"],
+    "미사일":   ["missile", "미사일"],
+    "제재":     ["sanction", "제재"],
+    "긴장":     ["tension", "긴장", "military", "border clash"],
+    "사이버공격": ["cyberattack", "사이버공격", "ransomware", "랜섬웨어", "data breach", "유출"],
+    "장애":     ["outage", "장애", "disruption", "차질"],
+    "부족":     ["shortage", "부족"],
+}
+
+# 카테고리에서 평평한 키워드 리스트 + (키워드 -> 한국어 태그) 매핑을 파생
+CRITICAL_KEYWORDS = [kw for kws in CRITICAL_CATEGORIES.values() for kw in kws]
+WARNING_KEYWORDS = [kw for kws in WARNING_CATEGORIES.values() for kw in kws]
+_KW_TAG = {}
+for _tag, _kws in {**CRITICAL_CATEGORIES, **WARNING_CATEGORIES}.items():
+    for _kw in _kws:
+        _KW_TAG[_kw] = _tag
 
 # 단어 경계까지 반영한 정규식 패턴을 미리 컴파일
 def _compile(keywords):
@@ -345,6 +363,7 @@ def fetch_country(country):
                 "source": source,
                 "severity": sev,
                 "matched": kw or "",
+                "tag": _KW_TAG.get(kw, "") if kw else "",
                 "age_hours": round(age, 1),
             })
     except Exception as e:  # noqa: BLE001
