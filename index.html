@@ -69,6 +69,7 @@
   .article a{color:var(--text);text-decoration:none;}
   .article a:hover{color:var(--blue);text-decoration:underline;}
   .article .meta{color:var(--muted);font-size:11px;margin-top:2px;}
+  .dupnote{color:var(--muted);font-size:11px;margin-top:3px;opacity:.85;}
   .sev-tag{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;}
   .sev-tag.critical{background:var(--red);}
   .sev-tag.warning{background:var(--yellow);}
@@ -565,6 +566,7 @@ function renderAlertList(){
           ${fb}
           ${isNew?'<span class="new-badge">NEW</span>':''}
           <div class="meta">${mem}${a.source||""} · ${ago(a.age_hours)}</div>
+          ${a.dup_count?`<div class="dupnote">🗞 같은 소식 외 ${a.dup_count}개 매체 보도</div>`:''}
         </div>`;}).join("");
     }else if(d && d.error){
       arts=`<div class="article meta">수집 오류: ${d.error}</div>`;

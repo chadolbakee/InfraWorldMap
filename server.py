@@ -26,6 +26,7 @@ PORT = 8000
 CACHE_TTL = 300           # 5분 캐시
 MAX_ARTICLES = 8          # 국가별로 프론트에 넘길 최대 기사 수
 MAX_AGE_HOURS = 48        # 이 시간보다 오래된 기사는 버림 (경고등은 최근 뉴스로만 결정)
+PER_TAG_LIMIT = 2         # 같은 위험유형(tag) 기사는 최신 N개만 표시(나머지는 접음)
 
 # ---------------------------------------------------------------------------
 # 심각도 키워드 사전 (제목/요약을 소문자로 검사)
@@ -382,6 +383,32 @@ def build_rss_url(country):
     return f"https://news.google.com/rss/search?{params}"
 
 
+def dedupe_by_tag(articles):
+    """같은 위험유형(tag) 기사는 최신 PER_TAG_LIMIT 개만 남기고 접는다.
+    같은 국가 + 같은 태그 + 48시간이면 대개 같은 사건의 여러 매체 보도이므로,
+    대표 기사에 dup_count(접힌 매체 수)를 붙인다. 태그 없는 기사는 그대로 둔다."""
+    tag_total = {}
+    for a in articles:
+        t = a.get("tag")
+        if t:
+            tag_total[t] = tag_total.get(t, 0) + 1
+    seen, first_of_tag, kept = {}, {}, []
+    for a in articles:
+        t = a.get("tag")
+        if not t:
+            kept.append(a)
+            continue
+        if seen.get(t, 0) < PER_TAG_LIMIT:
+            first_of_tag.setdefault(t, a)
+            seen[t] = seen.get(t, 0) + 1
+            kept.append(a)
+    for t, a in first_of_tag.items():
+        extra = tag_total[t] - seen[t]
+        if extra > 0:
+            a["dup_count"] = extra
+    return kept
+
+
 def fetch_region(region, members):
     """여러 나라를 하나로 묶은 복합 지역(예: 북미) 뉴스 집계."""
     rank = {"normal": 0, "warning": 1, "critical": 2}
@@ -407,7 +434,7 @@ def fetch_region(region, members):
         "count": len(merged),
         "critical_count": sum(1 for a in merged if a["severity"] == "critical"),
         "warning_count": sum(1 for a in merged if a["severity"] == "warning"),
-        "articles": merged[:12],
+        "articles": dedupe_by_tag(merged)[:12],
         "updated": int(time.time()),
     }
 
@@ -478,7 +505,7 @@ def fetch_country(country, refinery_ok=None):
         "count": len(articles),
         "critical_count": sum(1 for a in articles if a["severity"] == "critical"),
         "warning_count": sum(1 for a in articles if a["severity"] == "warning"),
-        "articles": articles[:MAX_ARTICLES],
+        "articles": dedupe_by_tag(articles)[:MAX_ARTICLES],
         "updated": int(time.time()),
     }
 

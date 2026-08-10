@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 MAX_ARTICLES = 8
 MAX_AGE_HOURS = 48
+PER_TAG_LIMIT = 2
 CACHE_TTL = 300
 REQUEST_TIMEOUT = 6   # 서버리스 함수 실행시간 제한 때문에 여유있게 짧게
 
@@ -325,6 +326,30 @@ def build_rss_url(country):
     return f"https://news.google.com/rss/search?{params}"
 
 
+def dedupe_by_tag(articles):
+    """같은 위험유형(tag) 기사는 최신 PER_TAG_LIMIT 개만 남기고 접는다."""
+    tag_total = {}
+    for a in articles:
+        t = a.get("tag")
+        if t:
+            tag_total[t] = tag_total.get(t, 0) + 1
+    seen, first_of_tag, kept = {}, {}, []
+    for a in articles:
+        t = a.get("tag")
+        if not t:
+            kept.append(a)
+            continue
+        if seen.get(t, 0) < PER_TAG_LIMIT:
+            first_of_tag.setdefault(t, a)
+            seen[t] = seen.get(t, 0) + 1
+            kept.append(a)
+    for t, a in first_of_tag.items():
+        extra = tag_total[t] - seen[t]
+        if extra > 0:
+            a["dup_count"] = extra
+    return kept
+
+
 def fetch_region(region, members):
     """복합 지역(예: 북미) = 여러 나라 병합."""
     rank = {"normal": 0, "warning": 1, "critical": 2}
@@ -348,7 +373,7 @@ def fetch_region(region, members):
         "country": region, "level": worst, "count": len(merged),
         "critical_count": sum(1 for a in merged if a["severity"] == "critical"),
         "warning_count": sum(1 for a in merged if a["severity"] == "warning"),
-        "articles": merged[:12], "updated": int(time.time()),
+        "articles": dedupe_by_tag(merged)[:12], "updated": int(time.time()),
     }
 
 
@@ -408,7 +433,7 @@ def fetch_country(country, refinery_ok=None):
         "count": len(articles),
         "critical_count": sum(1 for a in articles if a["severity"] == "critical"),
         "warning_count": sum(1 for a in articles if a["severity"] == "warning"),
-        "articles": articles[:MAX_ARTICLES],
+        "articles": dedupe_by_tag(articles)[:MAX_ARTICLES],
         "updated": int(time.time()),
     }
 
