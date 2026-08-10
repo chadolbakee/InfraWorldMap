@@ -107,19 +107,6 @@
     border-radius:10px;margin-left:6px;vertical-align:middle;}
   .htag.critical{background:rgba(248,81,73,.16);color:var(--red);}
   .htag.warning{background:rgba(210,153,34,.16);color:var(--yellow);}
-  /* 속보 피드 */
-  #breakingSection{background:rgba(248,81,73,.06);}
-  #breakingSection h2{color:var(--red);display:flex;align-items:center;gap:6px;}
-  .breaking-item{display:flex;gap:8px;padding:9px 0;border-top:1px dashed var(--border);
-    cursor:pointer;align-items:flex-start;}
-  .breaking-item:first-child{border-top:none;}
-  .breaking-item:hover{opacity:.8;}
-  .bk-fire{flex-shrink:0;font-size:14px;line-height:1.2;}
-  .bk-body{flex:1;font-size:12px;line-height:1.4;min-width:0;}
-  .bk-head{margin-bottom:2px;}
-  .bk-country{font-weight:700;color:var(--text);}
-  .bk-time{color:var(--red);font-weight:700;}
-  .bk-title{color:var(--muted);}
   /* 신선도 배지 */
   .fresh{display:inline-block;font-size:9px;font-weight:800;padding:1px 6px;
     border-radius:8px;margin-left:6px;vertical-align:middle;background:var(--red);color:#fff;}
@@ -155,11 +142,6 @@
         <label><input type="checkbox" id="soundToggle" checked /> 🔊 소리</label>
         <label><input type="checkbox" id="notifToggle" /> 🔔 데스크톱 알림</label>
       </div>
-    </div>
-
-    <div class="section" id="breakingSection" style="display:none;">
-      <h2>🔥 속보 · 방금 들어온 위험 뉴스</h2>
-      <div id="breakingList"></div>
     </div>
 
     <div class="section" style="padding-bottom:8px;">
@@ -233,15 +215,19 @@ const REFRESH_MS = 5*60*1000;
 // 신선도(따끈함) 기준 — 발행 시각 기준
 const FRESH_NOW_MIN = 60;        // 60분 이내 = "방금"
 const FRESH_HOURS = 3;           // 3시간 이내 = "속보" 배지
-const BREAKING_FEED_HOURS = 6;   // 상단 속보 피드에 올릴 최대 나이(시간)
 
-function freshBadge(h){
-  if(h==null) return "";
+// 진행 중인(오래된) 상황은 새 기사가 나와도 "속보"로 보지 않는다.
+//  예: 러시아-우크라이나 전쟁은 계속 진행 중이라 매일 새 기사가 나오지만 속보 아님
+const ONGOING_TAGS = new Set(["전쟁","긴장","제재"]);
+
+function freshBadgeFor(a){
+  if(!a || ONGOING_TAGS.has(a.tag)) return "";
+  const h=a.age_hours; if(h==null) return "";
   if(h*60 < FRESH_NOW_MIN) return '<span class="fresh now">🔥 방금</span>';
   if(h < FRESH_HOURS) return '<span class="fresh">🔥 속보</span>';
   return "";
 }
-function isFresh(h){ return h!=null && h < FRESH_HOURS; }
+function isHazard(a){ return a.severity==="critical"||a.severity==="warning"; }
 
 let selected = JSON.parse(localStorage.getItem("infra_countries")||"[]");
 let latestData = {};
@@ -475,7 +461,7 @@ function ago(h){
 async function refreshNews(){
   if(refreshTimer){clearTimeout(refreshTimer);}
   if(selected.length===0){
-    latestData={}; renderBreaking(); renderAlertList();
+    latestData={}; renderAlertList();
     statusText.textContent="지역을 선택하면 감시를 시작합니다";
     liveDot.classList.remove("live");
     return;
@@ -499,52 +485,11 @@ async function refreshNews(){
     statusText.textContent="수집 실패: "+msg;
   }
   refreshBtn.disabled=false;
-  renderBreaking();
   renderAlertList();
   updateMarkerStyles();
   refreshTimer=setTimeout(refreshNews,REFRESH_MS);
 }
 refreshBtn.addEventListener("click",refreshNews);
-
-// ---------------------------------------------------------------------------
-// 🔥 속보 피드 — 모든 감시 지역의 '방금 들어온 위험 뉴스'를 최신순으로
-// ---------------------------------------------------------------------------
-const breakingSection=document.getElementById("breakingSection");
-const breakingList=document.getElementById("breakingList");
-
-function renderBreaking(){
-  const items=[];
-  selected.forEach(en=>{
-    const d=latestData[en]; if(!d||!d.articles) return;
-    d.articles.forEach(a=>{
-      const hazard = a.severity==="critical"||a.severity==="warning";
-      if(hazard && a.age_hours!=null && a.age_hours<=BREAKING_FEED_HOURS){
-        items.push({en, ko:NAME_KO[en]||en, a});
-      }
-    });
-  });
-  items.sort((x,y)=>x.a.age_hours-y.a.age_hours);  // 최신(작은 age) 먼저
-  if(items.length===0){ breakingSection.style.display="none"; return; }
-  breakingSection.style.display="";
-  breakingList.innerHTML=items.slice(0,10).map(it=>{
-    const a=it.a;
-    const dot = a.severity==="critical"?"🔴":"🟡";
-    const htag = a.tag?`<span class="htag ${a.severity}">#${a.tag}</span>`:"";
-    return `<div class="breaking-item" data-link="${a.link}">
-      <span class="bk-fire">🔥</span>
-      <div class="bk-body">
-        <div class="bk-head"><span class="bk-country">${dot} ${it.ko}</span>
-          · <span class="bk-time">${ago(a.age_hours)}</span> ${htag}</div>
-        <div class="bk-title">${a.title}</div>
-      </div>
-    </div>`;
-  }).join("");
-  breakingList.querySelectorAll(".breaking-item").forEach(el=>{
-    el.addEventListener("click",()=>{
-      const l=el.dataset.link; if(l) window.open(l,"_blank","noopener");
-    });
-  });
-}
 
 // ---------------------------------------------------------------------------
 // 사이드바 경보 리스트
@@ -557,7 +502,15 @@ function renderAlertList(){
     alertList.innerHTML='<div class="empty">감시할 국가를 선택하세요.</div>';
     return;
   }
+  // 국가별로 '속보(최근 위험 뉴스)'가 있는지
+  const countryFresh = en => {
+    const d=latestData[en];
+    return !!(d && d.articles && d.articles.some(a=>freshBadgeFor(a)!==""));
+  };
+  // 정렬: 속보 있는 국가 먼저 → 그다음 심각도순
   const sorted=[...selected].sort((a,b)=>{
+    const fa=countryFresh(a)?0:1, fb=countryFresh(b)?0:1;
+    if(fa!==fb) return fa-fb;
     const la=(latestData[a]?.level)||"unknown";
     const lb=(latestData[b]?.level)||"unknown";
     return sevOrder[la]-sevOrder[lb];
@@ -567,21 +520,28 @@ function renderAlertList(){
     const d=latestData[en];
     const lvl=d?d.level:"unknown";
     const ko=NAME_KO[en]||en;
+    const fresh=countryFresh(en);
     const wrap=document.createElement("div");
     const hasNew = d && d.articles && d.articles.some(a=>alertedLinks.has(a.link));
     wrap.className="asset"+(hasNew?" has-new":""); wrap.id="asset-"+cssId(en);
     let arts="";
     if(d && d.articles && d.articles.length){
-      arts=d.articles.map(a=>{
+      // 국가 안에서: 위험(경고·주의) 먼저 → 그 안에서 최신순
+      const arr=[...d.articles].sort((x,y)=>{
+        const hx=isHazard(x)?0:1, hy=isHazard(y)?0:1;
+        if(hx!==hy) return hx-hy;
+        return (x.age_hours??1e9)-(y.age_hours??1e9);
+      });
+      arts=arr.map(a=>{
         const isNew = a.link && alertedLinks.has(a.link);
         const htag = a.tag ? `<span class="htag ${a.severity}">#${a.tag}</span>` : '';
-        const fresh = freshBadge(a.age_hours);
+        const fb = freshBadgeFor(a);
         return `
-        <div class="article${isFresh(a.age_hours)?' is-fresh':''}">
+        <div class="article${fb?' is-fresh':''}">
           <span class="sev-tag ${a.severity}"></span>
           <a href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
           ${htag}
-          ${fresh}
+          ${fb}
           ${isNew?'<span class="new-badge">NEW</span>':''}
           <div class="meta">${a.source||""} · ${ago(a.age_hours)}</div>
         </div>`;}).join("");
@@ -595,7 +555,7 @@ function renderAlertList(){
     const cnt = d ? `${d.count||0}건` : "";
     wrap.innerHTML=`
       <div class="asset-head">
-        <div class="asset-name"><span class="lamp ${lvl}"></span>${ko}</div>
+        <div class="asset-name"><span class="lamp ${lvl}"></span>${ko}${fresh?' <span class="fresh now">🔥 속보</span>':''}</div>
         <span class="badge ${lvl}">${SEV_LABEL[lvl]||"?"}</span>
       </div>
       <div class="meta" style="font-size:11px;color:var(--muted);margin-top:4px;">
