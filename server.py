@@ -200,9 +200,28 @@ def looks_noise(text):
     return False
 
 
+# 기상 '기록/마일스톤' 뉴스 (온도 기록이 주제 — 실제 위협보다 기록 자체).
+#  "기록적 폭우/홍수" 같은 진짜 재난은 안 건드리도록 '기온 기록'에만 좁게 매칭.
+_WEATHER_RECORD_RE = re.compile(
+    r"\bhottest\b.{0,25}\b(ever|on record|in history)\b"
+    r"|\bwarmest\b.{0,25}\b(ever|on record|in history)\b"
+    r"|\brecord[- ]high temperature"
+    r"|\bhighest temperature\b.{0,20}\b(ever|recorded|on record)\b"
+    r"|가장\s*더운|역대\s*최고\s*기온|최고\s*기온\s*경신",
+    re.I)
+
+
+def looks_weather_record(text):
+    return bool(_WEATHER_RECORD_RE.search(text))
+
+
 def should_demote(text):
-    """위험 키워드가 걸려도 실제 현재 사건이 아니면 True (과거·창작물·스포츠·연예)."""
-    return looks_historical(text) or looks_noise(text)
+    """위험 키워드가 걸려도 실제 현재 사건이 아니면 True.
+
+    과거·창작물·스포츠·연예·외교분쟁·구호모금·기상기록 맥락을 강등한다.
+    """
+    return (looks_historical(text) or looks_noise(text)
+            or looks_weather_record(text))
 
 
 # ---------------------------------------------------------------------------

@@ -164,8 +164,23 @@ def looks_noise(text):
     return False
 
 
+# 기상 '기록/마일스톤' 뉴스 (온도 기록이 주제). 기록적 폭우/홍수는 안 건드림.
+_WEATHER_RECORD_RE = re.compile(
+    r"\bhottest\b.{0,25}\b(ever|on record|in history)\b"
+    r"|\bwarmest\b.{0,25}\b(ever|on record|in history)\b"
+    r"|\brecord[- ]high temperature"
+    r"|\bhighest temperature\b.{0,20}\b(ever|recorded|on record)\b"
+    r"|가장\s*더운|역대\s*최고\s*기온|최고\s*기온\s*경신",
+    re.I)
+
+
+def looks_weather_record(text):
+    return bool(_WEATHER_RECORD_RE.search(text))
+
+
 def should_demote(text):
-    return looks_historical(text) or looks_noise(text)
+    return (looks_historical(text) or looks_noise(text)
+            or looks_weather_record(text))
 
 
 # 지명 필터: 언론사명(예: Yahoo News Singapore)만으로 걸린 엉뚱한 지역 기사 제외.
