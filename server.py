@@ -50,7 +50,6 @@ CRITICAL_CATEGORIES = {
     "폭발":     ["explosion", "explosions", "폭발"],
     "붕괴":     ["building collapse", "bridge collapse", "붕괴", "derailment"],
     "인프라피해": ["pipeline rupture", "송유관", "data center outage", "데이터센터 화재"],
-    "정유시설": ["refinery", "oil refinery", "정유공장", "정유시설"],
     "LNG터미널": ["lng terminal", "lng plant", "LNG 터미널", "액화천연가스 터미널"],
     "해저케이블": ["submarine cable", "subsea cable", "해저케이블", "해저 케이블"],
     "공습":     ["airstrike", "air strike", "drone strike", "공습",
@@ -87,6 +86,26 @@ _KW_TAG = {}
 for _tag, _kws in {**CRITICAL_CATEGORIES, **WARNING_CATEGORIES}.items():
     for _kw in _kws:
         _KW_TAG[_kw] = _tag
+_KW_TAG["refinery"] = "정유시설"   # refinery 는 아래 특례 규칙으로 처리
+
+# ---------------------------------------------------------------------------
+# 정유시설(refinery) 특례
+#  - 사고 상황(화재/폭발/누출 등)일 때만 경고로 잡는다. (단순 언급은 무시)
+#  - 아래 지역에서만 노출: 한국, 사우디, 멕시코, 북미(복합)
+# ---------------------------------------------------------------------------
+REFINERY_REGIONS = {"South Korea", "Saudi Arabia", "Mexico", "North America"}
+NA_MEMBERS = ["United States", "Canada", "Mexico"]
+
+_REFINERY_RE = re.compile(r"\brefinery\b|정유공장|정유시설", re.I)
+_ACCIDENT_RE = re.compile(
+    r"\b(fire|blaze|explosion|blast|exploded|leak|leaks|spill|outage|"
+    r"evacuat\w*|killed|injured|injuries|damage\w*|destroyed|blackout)\b"
+    r"|화재|폭발|누출|유출|사고|폭음", re.I)
+
+
+def refinery_incident(text):
+    """헤드라인이 '정유시설 + 사고' 조합이면 True."""
+    return bool(_REFINERY_RE.search(text) and _ACCIDENT_RE.search(text))
 
 # 단어 경계까지 반영한 정규식 패턴을 미리 컴파일
 def _compile(keywords):
@@ -333,8 +352,42 @@ def build_rss_url(country):
     return f"https://news.google.com/rss/search?{params}"
 
 
-def fetch_country(country):
+def fetch_region(region, members):
+    """여러 나라를 하나로 묶은 복합 지역(예: 북미) 뉴스 집계."""
+    rank = {"normal": 0, "warning": 1, "critical": 2}
+    worst = "normal"
+    merged, seen = [], set()
+    for m in members:
+        d = fetch_country(m, refinery_ok=True)  # 복합지역 멤버는 refinery 허용
+        if rank.get(d.get("level", "normal"), 0) > rank[worst]:
+            worst = d.get("level", worst)
+        for a in d.get("articles", []):
+            link = a.get("link", "")
+            if link and link in seen:
+                continue
+            seen.add(link)
+            a = dict(a)
+            a["member"] = m           # 어느 나라 기사인지 표시용
+            merged.append(a)
+    order = {"critical": 0, "warning": 1, "normal": 2}
+    merged.sort(key=lambda a: (order[a["severity"]], a.get("age_hours", 9e9)))
+    return {
+        "country": region,
+        "level": worst,
+        "count": len(merged),
+        "critical_count": sum(1 for a in merged if a["severity"] == "critical"),
+        "warning_count": sum(1 for a in merged if a["severity"] == "warning"),
+        "articles": merged[:12],
+        "updated": int(time.time()),
+    }
+
+
+def fetch_country(country, refinery_ok=None):
     """단일 국가 뉴스 스크래핑 + 심각도 집계."""
+    if country == "North America":
+        return fetch_region(country, NA_MEMBERS)
+    if refinery_ok is None:
+        refinery_ok = country in REFINERY_REGIONS
     url = build_rss_url(country)
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     articles = []
@@ -365,6 +418,10 @@ def fetch_country(country):
             # 요약(description)은 관련기사·언론사명이 섞여 지저분하므로
             # 심각도 판정은 순수 헤드라인으로만 한다.
             sev, kw = classify(headline)
+            # 정유시설 특례: 허용 지역 + 사고 상황일 때만 경고로 승격
+            if refinery_ok and refinery_incident(headline) \
+                    and not should_demote(headline):
+                sev, kw = "critical", "refinery"
             if level_rank[sev] > level_rank[worst]:
                 worst = sev
             articles.append({

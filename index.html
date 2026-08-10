@@ -183,6 +183,7 @@ const COUNTRIES = [
   ["United States","미국",38.90,-77.04],
   ["Canada","캐나다",45.42,-75.70],
   ["Mexico","멕시코",19.43,-99.13],
+  ["North America","북미(복합)",44.0,-100.0],
   ["Brazil","브라질",-23.55,-46.63],
   ["Chile","칠레",-33.45,-70.66],
   ["Argentina","아르헨티나",-34.60,-58.38],
@@ -536,6 +537,7 @@ function renderAlertList(){
         const isNew = a.link && alertedLinks.has(a.link);
         const htag = a.tag ? `<span class="htag ${a.severity}">#${a.tag}</span>` : '';
         const fb = freshBadgeFor(a);
+        const mem = a.member ? `<b>${NAME_KO[a.member]||a.member}</b> · ` : '';
         return `
         <div class="article${fb?' is-fresh':''}">
           <span class="sev-tag ${a.severity}"></span>
@@ -543,7 +545,7 @@ function renderAlertList(){
           ${htag}
           ${fb}
           ${isNew?'<span class="new-badge">NEW</span>':''}
-          <div class="meta">${a.source||""} · ${ago(a.age_hours)}</div>
+          <div class="meta">${mem}${a.source||""} · ${ago(a.age_hours)}</div>
         </div>`;}).join("");
     }else if(d && d.error){
       arts=`<div class="article meta">수집 오류: ${d.error}</div>`;
