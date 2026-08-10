@@ -142,6 +142,17 @@ NOISE_KEYWORDS = [
     "console war", "format war", "talent war", "chip war", "brand war",
     "price battle", "burger", "noodles", "market share", "startup",
     "ipo", "e-commerce", "quarterly earnings",
+    # 외교 분쟁 (물리적 위협 아님) — 영유권 항의/외교적 항의
+    "lodge a protest", "lodges a protest", "lodged a protest",
+    "diplomatic protest", "formal protest", "protest note",
+    "territorial dispute", "disputed island", "독도", "dokdo",
+    "takeshima", "senkaku",
+    # 구호 / 모금 / 자선 (실제 재난은 다른 곳/과거)
+    "appeal for", "relief effort", "relief fund", "relief appeal",
+    "aid appeal", "fundraiser", "fundraising", "charity", "donation",
+    "성금", "모금", "구호",
+    # 스포츠 대회 (축구 등)
+    "cup", "matchday", "goalless", "final eight", "quarter-final", "semi-final",
 ]
 _NOISE_PATS = _compile(NOISE_KEYWORDS)
 
