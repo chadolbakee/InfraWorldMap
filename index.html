@@ -293,7 +293,8 @@ function toggleCountry(en,on){
   localStorage.setItem("infra_countries",JSON.stringify(selected));
   renderChips(); renderOptions(searchEl.value);
   syncMarkers();
-  refreshNews();
+  // 전 지역 데이터는 이미 latestData 에 있으므로 재수집 없이 화면만 갱신
+  renderAlertList(); updateMarkerStyles();
 }
 pickerBox.addEventListener("click",()=>dropdown.classList.toggle("open"));
 searchEl.addEventListener("input",()=>renderOptions(searchEl.value));
@@ -323,10 +324,9 @@ function onMarkerClick(en){
     selected.push(en);
     localStorage.setItem("infra_countries",JSON.stringify(selected));
     renderChips(); renderOptions(searchEl.value);
-    refreshNews();                       // 새로 선택한 지역 뉴스 로드
   }
   map.setView(COORD[en], 4);
-  updateMarkerStyles();
+  renderAlertList(); updateMarkerStyles();   // 데이터는 이미 있으니 화면만 갱신
   const el=document.getElementById("asset-"+cssId(en));
   if(el){ el.classList.add("expanded"); el.scrollIntoView({behavior:"smooth"}); }
 }
@@ -334,26 +334,23 @@ function onMarkerClick(en){
 // 드롭다운 변경 등에서 호출 — 마커는 유지하고 스타일만 갱신
 function syncMarkers(){ buildAllMarkers(); }
 
+// 모든 지역 마커를 심각도 '원래 색'으로 칠한다(선택 여부 무관).
+//  선택(감시 중)한 지역은 조금 크게 + 테두리 굵게 표시.
 function updateMarkerStyles(){
   COUNTRIES.forEach(([en])=>{
     const m=markers[en]; if(!m) return;
     const monitored = selected.includes(en);
-    if(!monitored){
-      // 아직 선택 안 한 지역: 작은 파란 점(반짝임)
-      m.setStyle({fillColor:"#58a6ff", color:"#fff", weight:1, fillOpacity:.85});
-      m.setRadius(5);
-      m.bindPopup(`<b>${NAME_KO[en]||en}</b><br><small>클릭하면 이 지역 뉴스를 감시합니다</small>`);
-      return;
-    }
     const d=latestData[en];
-    const lvl = d ? d.level : "unknown";
+    const lvl = d ? d.level : "unknown";   // 아직 수집 전이면 회색(unknown)
     m.setStyle({fillColor:SEV_COLOR[lvl]||SEV_COLOR.unknown, color:"#fff",
-                weight:1.5, fillOpacity:.95});
-    m.setRadius(lvl==="critical"?13:9);
+                weight:monitored?2.5:1, fillOpacity:.9});
+    m.setRadius(lvl==="critical"?12:(monitored?9:6));
     const ko=NAME_KO[en]||en;
     let html=`<b>${ko}</b><br>상태: <b style="color:${SEV_COLOR[lvl]}">${SEV_LABEL[lvl]||"?"}</b>`;
     if(d && d.articles && d.articles.length){
       html+=`<br><small>${d.critical_count||0} 심각 · ${d.warning_count||0} 주의 · 총 ${d.count}건</small>`;
+    }else if(!monitored){
+      html+=`<br><small>클릭하면 이 지역 뉴스를 봅니다</small>`;
     }
     m.bindPopup(html);
   });
@@ -480,27 +477,28 @@ function ago(h){
   return Math.round(h/24)+"일 전";
 }
 
+const ALL_COUNTRIES = COUNTRIES.map(c=>c[0]);
+function chunk(arr,n){const out=[];for(let i=0;i<arr.length;i+=n)out.push(arr.slice(i,i+n));return out;}
+
+// 전 지역 뉴스를 수집해서 모든 마커를 심각도 색으로 칠한다.
+// (Vercel 실행시간/개수 제한을 피하려고 10개씩 나눠 병렬 호출)
 async function refreshNews(){
   if(refreshTimer){clearTimeout(refreshTimer);}
-  if(selected.length===0){
-    latestData={}; renderAlertList();
-    statusText.textContent="지도의 지역을 클릭해 감시를 시작하세요";
-    liveDot.classList.remove("live");
-    return;
-  }
   liveDot.classList.add("live");
-  statusText.textContent="뉴스 수집 중…";
+  statusText.textContent="전 지역 뉴스 수집 중…";
   refreshBtn.disabled=true;
   try{
-    const q=encodeURIComponent(selected.join(","));
-    const res=await fetch("/api/news?countries="+q,{cache:"no-store"});
-    if(!res.ok){ throw new Error("서버 응답 "+res.status); }
-    latestData=await res.json();
-    const t=new Date().toLocaleTimeString("ko-KR");
-    statusText.textContent="마지막 업데이트 "+t;
+    const chunks=chunk(ALL_COUNTRIES,10);
+    const parts=await Promise.all(chunks.map(async cs=>{
+      const q=encodeURIComponent(cs.join(","));
+      const res=await fetch("/api/news?countries="+q,{cache:"no-store"});
+      if(!res.ok) throw new Error("서버 응답 "+res.status);
+      return res.json();
+    }));
+    latestData=Object.assign({},...parts);
+    statusText.textContent="마지막 업데이트 "+new Date().toLocaleTimeString("ko-KR");
     detectAndAlert();
   }catch(e){
-    // "Failed to fetch" = 서버(API)에 아예 못 닿음: 로컬이면 server.py 실행 필요
     const msg = /fetch/i.test(e.message)
       ? "API 연결 실패 — 서버(server.py) 실행 여부나 배포 상태를 확인하세요"
       : e.message;
