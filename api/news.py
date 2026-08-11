@@ -212,8 +212,23 @@ NOISE_KEYWORDS = [
     "성금", "모금", "구호",
     # 스포츠 대회 (축구 등)
     "cup", "matchday", "goalless", "final eight", "quarter-final", "semi-final",
+    # 게임 / 소프트웨어 (예: "US-China war" 가 게임 mod 이야기)
+    "video game", "videogame", "게임", "gaming", "gameplay", "game mod",
+    "modding", "esports", "e-sports", "playstation", "xbox", "nintendo",
+    "company of heroes",
 ]
 _NOISE_PATS = _compile(NOISE_KEYWORDS)
+
+# 출처(언론사) 기반 노이즈 — 게임·스포츠·연예 전문 매체는 통째로 강등
+_NOISE_SOURCE_RE = re.compile(
+    r"\.games\b|\bign\b|polygon|kotaku|pc\s*gamer|gamesradar|eurogamer|"
+    r"gamespot|rock paper shotgun|gamerant|dexerto|dot esports|"
+    r"goal\.com|\bespn\b|sky\s*sports|football|soccer|"
+    r"billboard|pitchfork|variety|hollywood", re.I)
+
+
+def is_noise_source(source):
+    return bool(source and _NOISE_SOURCE_RE.search(source))
 
 
 def looks_noise(text):
@@ -438,6 +453,9 @@ def fetch_country(country, refinery_ok=None):
                 continue
             # 심각도는 순수 헤드라인으로만 판정 (요약은 관련기사·언론사명이 섞임)
             sev, kw = classify(headline)
+            # 게임/스포츠/연예 전문 매체발 기사는 강등
+            if sev != "normal" and is_noise_source(source):
+                sev, kw = "normal", None
             # 정유시설 특례: 허용 지역 + 사고 상황일 때만 경고로 승격
             if refinery_ok and refinery_incident(headline) \
                     and not should_demote(headline):
