@@ -101,6 +101,64 @@ def _compile(keywords):
 _CRIT_PATS = _compile(CRITICAL_KEYWORDS)
 _WARN_PATS = _compile(WARNING_KEYWORDS)
 
+# 인프라 영향 신호 — 경고(빨강)는 인프라 자산/운영 피해가 있을 때만 (한국 인명피해 예외)
+INFRA_IMPACT_KEYWORDS = [
+    "power plant", "power station", "발전소", "wind turbine", "wind farm",
+    "풍력", "solar farm", "태양광", "substation", "변전소", "transformer",
+    "변압기", "power line", "transmission line", "송전", "power grid",
+    "grid", "전력망", "power outage", "blackout", "정전", "단전",
+    "pipeline", "송유관", "가스관", "refinery", "정유공장", "정유시설",
+    "lng terminal", "oil terminal", "gas terminal",
+    "port", "항만", "항구", "airport", "공항", "railway", "railroad",
+    "철도", "highway", "고속도로", "bridge", "교량", "tunnel", "터널",
+    "data center", "데이터센터", "submarine cable", "subsea cable",
+    "해저케이블", "telecom", "통신망", "network outage",
+    "dam", "댐", "reservoir", "저수지", "water treatment", "정수장",
+    "factory", "공장", "plant closure", "가동중단", "가동 중단",
+    "infrastructure", "인프라", "critical infrastructure",
+    "damaged", "damage to", "destroyed", "파손", "손상",
+    "shutdown", "shut down", "supply disruption", "공급 중단",
+    "operations suspended", "운영 중단", "service disruption", "outage",
+]
+_INFRA_PATS = _compile(INFRA_IMPACT_KEYWORDS)
+
+
+def has_infra_impact(text):
+    for _kw, pat in _INFRA_PATS:
+        if pat.search(text):
+            return True
+    return False
+
+
+CASUALTY_KEYWORDS = [
+    "death toll", "kill", "kills", "killed", "killing", "dead", "deaths",
+    "die", "dies", "died", "fatal", "fatalities", "casualty", "casualties",
+    "injure", "injures", "injured", "injury", "injuries",
+    "missing", "trapped", "buries", "buried",
+    "사망", "숨져", "숨진", "숨졌", "부상", "실종", "매몰", "인명피해", "희생", "사상자",
+]
+_CASUALTY_PATS = _compile(CASUALTY_KEYWORDS)
+
+
+def has_casualty(text):
+    for _kw, pat in _CASUALTY_PATS:
+        if pat.search(text):
+            return True
+    return False
+
+
+_STORM_RE = re.compile(
+    r"\b(?:typhoon|hurricane|cyclone|tropical storm|tropical depression|storm)"
+    r"\s+([A-Z][a-z]+)", re.I)
+
+
+def event_key(a):
+    m = _STORM_RE.search(a.get("title", ""))
+    if m:
+        return "storm:" + m.group(1).lower()
+    return a.get("tag") or None
+
+
 # 과거 사건 / 회고 / 창작물 맥락 신호 -> 위험 키워드가 있어도 경고 강등
 HISTORICAL_KEYWORDS = [
     "anniversary", "주년", "기념", "추모", "추도", "memorial", "commemorat",
@@ -327,24 +385,24 @@ def build_rss_url(country):
 
 
 def dedupe_by_tag(articles):
-    """같은 위험유형(tag) 기사는 최신 PER_TAG_LIMIT 개만 남기고 접는다."""
-    tag_total = {}
+    """같은 사건(event_key: 폭풍 이름 또는 태그)은 최신 PER_TAG_LIMIT 개만 남긴다."""
+    total = {}
     for a in articles:
-        t = a.get("tag")
-        if t:
-            tag_total[t] = tag_total.get(t, 0) + 1
-    seen, first_of_tag, kept = {}, {}, []
+        k = event_key(a)
+        if k:
+            total[k] = total.get(k, 0) + 1
+    seen, first_of, kept = {}, {}, []
     for a in articles:
-        t = a.get("tag")
-        if not t:
+        k = event_key(a)
+        if not k:
             kept.append(a)
             continue
-        if seen.get(t, 0) < PER_TAG_LIMIT:
-            first_of_tag.setdefault(t, a)
-            seen[t] = seen.get(t, 0) + 1
+        if seen.get(k, 0) < PER_TAG_LIMIT:
+            first_of.setdefault(k, a)
+            seen[k] = seen.get(k, 0) + 1
             kept.append(a)
-    for t, a in first_of_tag.items():
-        extra = tag_total[t] - seen[t]
+    for k, a in first_of.items():
+        extra = total[k] - seen[k]
         if extra > 0:
             a["dup_count"] = extra
     return kept
@@ -413,12 +471,18 @@ def fetch_country(country, refinery_ok=None):
             if refinery_ok and refinery_incident(headline) \
                     and not should_demote(headline):
                 sev, kw = "critical", "refinery"
+            # 인프라 영향 게이팅: 경고는 인프라 피해가 있을 때만 (한국 인명피해 예외)
+            infra = (kw == "refinery") or has_infra_impact(headline)
+            if sev == "critical" and not infra:
+                if not (country == "South Korea" and has_casualty(headline)):
+                    sev = "warning"
             if level_rank[sev] > level_rank[worst]:
                 worst = sev
             articles.append({
                 "title": title, "link": link, "pubDate": pub, "source": source,
                 "severity": sev, "matched": kw or "",
                 "tag": _KW_TAG.get(kw, "") if kw else "",
+                "infra": infra,
                 "age_hours": round(age, 1),
             })
     except Exception as e:  # noqa: BLE001

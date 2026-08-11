@@ -124,6 +124,78 @@ _CRIT_PATS = _compile(CRITICAL_KEYWORDS)
 _WARN_PATS = _compile(WARNING_KEYWORDS)
 
 # ---------------------------------------------------------------------------
+# 인프라 영향 신호
+#  자연재해 자체보다 '인프라 자산/운영에 실제 피해'가 났는지를 본다.
+#  경고(빨강)는 이 신호가 있을 때만 (한국 인명피해는 예외).
+# ---------------------------------------------------------------------------
+INFRA_IMPACT_KEYWORDS = [
+    # 에너지·전력
+    "power plant", "power station", "발전소", "wind turbine", "wind farm",
+    "풍력", "solar farm", "태양광", "substation", "변전소", "transformer",
+    "변압기", "power line", "transmission line", "송전", "power grid",
+    "grid", "전력망", "power outage", "blackout", "정전", "단전",
+    # 석유·가스
+    "pipeline", "송유관", "가스관", "refinery", "정유공장", "정유시설",
+    "lng terminal", "oil terminal", "gas terminal",
+    # 교통·물류 (물리적 시설 피해 위주. 단순 결항/지연은 인프라 피해로 안 봄)
+    "port", "항만", "항구", "airport", "공항", "railway", "railroad",
+    "철도", "highway", "고속도로", "bridge", "교량", "tunnel", "터널",
+    # 통신·데이터
+    "data center", "데이터센터", "submarine cable", "subsea cable",
+    "해저케이블", "telecom", "통신망", "network outage",
+    # 수자원·산업
+    "dam", "댐", "reservoir", "저수지", "water treatment", "정수장",
+    "factory", "공장", "plant closure", "가동중단", "가동 중단",
+    # 일반 인프라/운영 피해
+    "infrastructure", "인프라", "critical infrastructure",
+    "damaged", "damage to", "destroyed", "파손", "손상",
+    "shutdown", "shut down", "supply disruption", "공급 중단",
+    "operations suspended", "운영 중단", "service disruption", "outage",
+]
+_INFRA_PATS = _compile(INFRA_IMPACT_KEYWORDS)
+
+
+def has_infra_impact(text):
+    """헤드라인이 인프라 자산/운영 피해를 언급하면 True."""
+    for _kw, pat in _INFRA_PATS:
+        if pat.search(text):
+            return True
+    return False
+
+
+# 인명피해 신호 (한국 예외 판정용)
+CASUALTY_KEYWORDS = [
+    "death toll", "kill", "kills", "killed", "killing", "dead", "deaths",
+    "die", "dies", "died", "fatal", "fatalities", "casualty", "casualties",
+    "injure", "injures", "injured", "injury", "injuries",
+    "missing", "trapped", "buries", "buried",
+    "사망", "숨져", "숨진", "숨졌", "부상", "실종", "매몰", "인명피해", "희생", "사상자",
+]
+_CASUALTY_PATS = _compile(CASUALTY_KEYWORDS)
+
+
+def has_casualty(text):
+    for _kw, pat in _CASUALTY_PATS:
+        if pat.search(text):
+            return True
+    return False
+
+
+# 사건명(폭풍 이름 등)으로 같은 사건 묶기 — 태그가 달라도 같은 폭풍이면 하나로.
+_STORM_RE = re.compile(
+    r"\b(?:typhoon|hurricane|cyclone|tropical storm|tropical depression|storm)"
+    r"\s+([A-Z][a-z]+)", re.I)
+
+
+def event_key(a):
+    """같은 사건 판별 키. 폭풍 이름이 있으면 그걸로, 없으면 태그로."""
+    m = _STORM_RE.search(a.get("title", ""))
+    if m:
+        return "storm:" + m.group(1).lower()
+    return a.get("tag") or None
+
+
+# ---------------------------------------------------------------------------
 # 과거 사건 / 회고 / 창작물 맥락 신호
 #  위험 키워드(war, explosion 등)가 들어 있어도, 아래 맥락이면 '지금 벌어지는
 #  사건'이 아니라 과거 회고·기념·다큐·영화 등이므로 경고를 강등(normal)한다.
@@ -384,26 +456,26 @@ def build_rss_url(country):
 
 
 def dedupe_by_tag(articles):
-    """같은 위험유형(tag) 기사는 최신 PER_TAG_LIMIT 개만 남기고 접는다.
-    같은 국가 + 같은 태그 + 48시간이면 대개 같은 사건의 여러 매체 보도이므로,
-    대표 기사에 dup_count(접힌 매체 수)를 붙인다. 태그 없는 기사는 그대로 둔다."""
-    tag_total = {}
+    """같은 사건(event_key: 폭풍 이름 또는 위험유형)은 최신 PER_TAG_LIMIT 개만
+    남기고 접는다. 대표 기사에 dup_count(접힌 매체 수)를 붙인다.
+    같은 폭풍이면 태풍/홍수/폭풍 태그가 달라도 하나로 묶인다."""
+    total = {}
     for a in articles:
-        t = a.get("tag")
-        if t:
-            tag_total[t] = tag_total.get(t, 0) + 1
-    seen, first_of_tag, kept = {}, {}, []
+        k = event_key(a)
+        if k:
+            total[k] = total.get(k, 0) + 1
+    seen, first_of, kept = {}, {}, []
     for a in articles:
-        t = a.get("tag")
-        if not t:
+        k = event_key(a)
+        if not k:
             kept.append(a)
             continue
-        if seen.get(t, 0) < PER_TAG_LIMIT:
-            first_of_tag.setdefault(t, a)
-            seen[t] = seen.get(t, 0) + 1
+        if seen.get(k, 0) < PER_TAG_LIMIT:
+            first_of.setdefault(k, a)
+            seen[k] = seen.get(k, 0) + 1
             kept.append(a)
-    for t, a in first_of_tag.items():
-        extra = tag_total[t] - seen[t]
+    for k, a in first_of.items():
+        extra = total[k] - seen[k]
         if extra > 0:
             a["dup_count"] = extra
     return kept
@@ -479,6 +551,12 @@ def fetch_country(country, refinery_ok=None):
             if refinery_ok and refinery_incident(headline) \
                     and not should_demote(headline):
                 sev, kw = "critical", "refinery"
+            # 인프라 영향 게이팅: 경고(빨강)는 인프라 자산/운영 피해가 있을 때만.
+            #  한국은 인명피해도 경고로 인정. 그 외 자연재해는 주의로 강등.
+            infra = (kw == "refinery") or has_infra_impact(headline)
+            if sev == "critical" and not infra:
+                if not (country == "South Korea" and has_casualty(headline)):
+                    sev = "warning"
             if level_rank[sev] > level_rank[worst]:
                 worst = sev
             articles.append({
@@ -489,6 +567,7 @@ def fetch_country(country, refinery_ok=None):
                 "severity": sev,
                 "matched": kw or "",
                 "tag": _KW_TAG.get(kw, "") if kw else "",
+                "infra": infra,
                 "age_hours": round(age, 1),
             })
     except Exception as e:  # noqa: BLE001
