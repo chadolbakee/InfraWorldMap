@@ -94,8 +94,8 @@ _KW_TAG["refinery"] = "정유시설"   # refinery 는 아래 특례 규칙으로
 #  - 사고 상황(화재/폭발/누출 등)일 때만 경고로 잡는다. (단순 언급은 무시)
 #  - 아래 지역에서만 노출: 한국, 사우디, 멕시코, 북미(복합)
 # ---------------------------------------------------------------------------
-REFINERY_REGIONS = {"South Korea", "Saudi Arabia", "Mexico", "North America"}
-NA_MEMBERS = ["United States", "Canada", "Mexico"]
+REFINERY_REGIONS = {"South Korea", "Saudi Arabia", "Mexico",
+                    "United States", "Canada"}
 
 _REFINERY_RE = re.compile(r"\brefinery\b|정유공장|정유시설", re.I)
 _ACCIDENT_RE = re.compile(
@@ -481,40 +481,8 @@ def dedupe_by_tag(articles):
     return kept
 
 
-def fetch_region(region, members):
-    """여러 나라를 하나로 묶은 복합 지역(예: 북미) 뉴스 집계."""
-    rank = {"normal": 0, "warning": 1, "critical": 2}
-    worst = "normal"
-    merged, seen = [], set()
-    for m in members:
-        d = fetch_country(m, refinery_ok=True)  # 복합지역 멤버는 refinery 허용
-        if rank.get(d.get("level", "normal"), 0) > rank[worst]:
-            worst = d.get("level", worst)
-        for a in d.get("articles", []):
-            link = a.get("link", "")
-            if link and link in seen:
-                continue
-            seen.add(link)
-            a = dict(a)
-            a["member"] = m           # 어느 나라 기사인지 표시용
-            merged.append(a)
-    order = {"critical": 0, "warning": 1, "normal": 2}
-    merged.sort(key=lambda a: (order[a["severity"]], a.get("age_hours", 9e9)))
-    return {
-        "country": region,
-        "level": worst,
-        "count": len(merged),
-        "critical_count": sum(1 for a in merged if a["severity"] == "critical"),
-        "warning_count": sum(1 for a in merged if a["severity"] == "warning"),
-        "articles": dedupe_by_tag(merged)[:12],
-        "updated": int(time.time()),
-    }
-
-
 def fetch_country(country, refinery_ok=None):
     """단일 국가 뉴스 스크래핑 + 심각도 집계."""
-    if country == "North America":
-        return fetch_region(country, NA_MEMBERS)
     if refinery_ok is None:
         refinery_ok = country in REFINERY_REGIONS
     url = build_rss_url(country)

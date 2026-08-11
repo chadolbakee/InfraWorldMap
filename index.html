@@ -190,7 +190,6 @@ const COUNTRIES = [
   ["United States","미국",38.90,-77.04],
   ["Canada","캐나다",45.42,-75.70],
   ["Mexico","멕시코",19.43,-99.13],
-  ["North America","북미(복합)",44.0,-100.0],
   ["Brazil","브라질",-23.55,-46.63],
   ["Chile","칠레",-33.45,-70.66],
   ["Argentina","아르헨티나",-34.60,-58.38],
@@ -238,6 +237,8 @@ function freshBadgeFor(a){
 function isHazard(a){ return a.severity==="critical"||a.severity==="warning"; }
 
 let selected = JSON.parse(localStorage.getItem("infra_countries")||"[]");
+selected = selected.filter(en=>COORD[en]);   // 없어진 지역(예: 북미 복합) 정리
+localStorage.setItem("infra_countries",JSON.stringify(selected));
 let latestData = {};
 let markers = {};
 let refreshTimer = null;

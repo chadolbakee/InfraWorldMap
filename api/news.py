@@ -75,8 +75,8 @@ for _tag, _kws in {**CRITICAL_CATEGORIES, **WARNING_CATEGORIES}.items():
 _KW_TAG["refinery"] = "정유시설"
 
 # 정유시설 특례: 사고 상황일 때만 + 아래 지역에서만 노출
-REFINERY_REGIONS = {"South Korea", "Saudi Arabia", "Mexico", "North America"}
-NA_MEMBERS = ["United States", "Canada", "Mexico"]
+REFINERY_REGIONS = {"South Korea", "Saudi Arabia", "Mexico",
+                    "United States", "Canada"}
 _REFINERY_RE = re.compile(r"\brefinery\b|정유공장|정유시설", re.I)
 _ACCIDENT_RE = re.compile(
     r"\b(fire|blaze|explosion|blast|exploded|leak|leaks|spill|outage|"
@@ -408,36 +408,7 @@ def dedupe_by_tag(articles):
     return kept
 
 
-def fetch_region(region, members):
-    """복합 지역(예: 북미) = 여러 나라 병합."""
-    rank = {"normal": 0, "warning": 1, "critical": 2}
-    worst = "normal"
-    merged, seen = [], set()
-    for m in members:
-        d = fetch_country(m, refinery_ok=True)
-        if rank.get(d.get("level", "normal"), 0) > rank[worst]:
-            worst = d.get("level", worst)
-        for a in d.get("articles", []):
-            link = a.get("link", "")
-            if link and link in seen:
-                continue
-            seen.add(link)
-            a = dict(a)
-            a["member"] = m
-            merged.append(a)
-    order = {"critical": 0, "warning": 1, "normal": 2}
-    merged.sort(key=lambda a: (order[a["severity"]], a.get("age_hours", 9e9)))
-    return {
-        "country": region, "level": worst, "count": len(merged),
-        "critical_count": sum(1 for a in merged if a["severity"] == "critical"),
-        "warning_count": sum(1 for a in merged if a["severity"] == "warning"),
-        "articles": dedupe_by_tag(merged)[:12], "updated": int(time.time()),
-    }
-
-
 def fetch_country(country, refinery_ok=None):
-    if country == "North America":
-        return fetch_region(country, NA_MEMBERS)
     if refinery_ok is None:
         refinery_ok = country in REFINERY_REGIONS
     url = build_rss_url(country)
