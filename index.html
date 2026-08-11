@@ -83,6 +83,13 @@
     border:none;border-radius:6px;cursor:pointer;font-size:13px;}
   button.refresh:hover{opacity:.9;}
   button.refresh:disabled{opacity:.5;cursor:default;}
+  .btn-row{display:flex;gap:8px;margin-top:10px;}
+  .btn-row .refresh{margin-top:0;flex:1;}
+  button.clearbtn{padding:8px 10px;background:transparent;color:var(--muted);
+    border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;
+    white-space:nowrap;}
+  button.clearbtn:hover{color:var(--text);border-color:var(--muted);}
+  .map-hint{margin-top:8px;font-size:11px;color:var(--muted);}
   /* 알림 컨트롤 */
   .notif-controls{display:flex;gap:14px;margin-top:10px;font-size:12px;color:var(--muted);}
   .notif-controls label{display:flex;align-items:center;gap:5px;cursor:pointer;}
@@ -144,7 +151,11 @@
         <span class="dot" id="liveDot"></span>
         <span id="statusText">지도의 지역을 클릭해 감시를 시작하세요</span>
       </div>
-      <button class="refresh" id="refreshBtn">지금 새로고침</button>
+      <div class="btn-row">
+        <button class="refresh" id="refreshBtn">지금 새로고침</button>
+        <button class="clearbtn" id="clearBtn">선택 전체 해제</button>
+      </div>
+      <div class="map-hint">지도: 클릭=선택/해제 · Shift+드래그=범위 선택</div>
       <div class="notif-controls">
         <label><input type="checkbox" id="soundToggle" checked /> 🔊 소리</label>
         <label><input type="checkbox" id="notifToggle" /> 🔔 데스크톱 알림</label>
@@ -318,23 +329,55 @@ function buildAllMarkers(){
       radius:5, color:"#fff", weight:1, fillColor:"#58a6ff",
       fillOpacity:.85, className:"blink-marker"
     }).addTo(map);
-    m.on("click",()=>onMarkerClick(en));
+    m.on("click",(ev)=>onMarkerClick(en,ev));
     markers[en]=m;
   });
   updateMarkerStyles();
 }
 
-function onMarkerClick(en){
-  if(!selected.includes(en)){
-    selected.push(en);
-    localStorage.setItem("infra_countries",JSON.stringify(selected));
-    renderChips(); renderOptions(searchEl.value);
+// 선택 변경 후 화면 갱신 공통 처리
+function applySelection(focusEn){
+  localStorage.setItem("infra_countries",JSON.stringify(selected));
+  renderChips(); renderOptions(searchEl.value);
+  renderAlertList(); updateMarkerStyles();
+  if(focusEn){
+    const el=document.getElementById("asset-"+cssId(focusEn));
+    if(el){ el.classList.add("expanded"); el.scrollIntoView({behavior:"smooth"}); }
   }
-  map.setView(COORD[en], 4);
-  renderAlertList(); updateMarkerStyles();   // 데이터는 이미 있으니 화면만 갱신
-  const el=document.getElementById("asset-"+cssId(en));
-  if(el){ el.classList.add("expanded"); el.scrollIntoView({behavior:"smooth"}); }
 }
+
+// 마커 클릭 = 토글 (선택 <-> 해제). Shift+드래그 중이면 무시.
+function onMarkerClick(en, ev){
+  if(ev && ev.originalEvent && ev.originalEvent.shiftKey) return;
+  const i = selected.indexOf(en);
+  if(i >= 0){ selected.splice(i,1); applySelection(); }        // 다시 누르면 해제
+  else { selected.push(en); map.setView(COORD[en],4); applySelection(en); }
+}
+
+// Shift + 드래그 = 지도 위 박스 안의 나라들 누적 선택
+map.boxZoom.disable();
+let _boxStart=null, _boxRect=null;
+map.on("mousedown",(e)=>{
+  if(!e.originalEvent.shiftKey) return;
+  _boxStart=e.latlng; map.dragging.disable();
+  _boxRect=L.rectangle([_boxStart,_boxStart],
+    {color:"#388bfd",weight:1,dashArray:"4",fillOpacity:.1}).addTo(map);
+});
+map.on("mousemove",(e)=>{
+  if(_boxRect) _boxRect.setBounds(L.latLngBounds(_boxStart,e.latlng));
+});
+map.on("mouseup",()=>{
+  if(!_boxRect) return;
+  const b=_boxRect.getBounds();
+  map.removeLayer(_boxRect); _boxRect=null; map.dragging.enable();
+  let added=0;
+  COUNTRIES.forEach(([en])=>{
+    if(COORD[en] && b.contains(L.latLng(COORD[en])) && !selected.includes(en)){
+      selected.push(en); added++;
+    }
+  });
+  if(added) applySelection();
+});
 
 // 드롭다운 변경 등에서 호출 — 마커는 유지하고 스타일만 갱신
 function syncMarkers(){ buildAllMarkers(); }
@@ -515,6 +558,10 @@ async function refreshNews(){
   refreshTimer=setTimeout(refreshNews,REFRESH_MS);
 }
 refreshBtn.addEventListener("click",refreshNews);
+document.getElementById("clearBtn").addEventListener("click",()=>{
+  selected=[]; applySelection();
+  map.setView([25,20],2);
+});
 
 // ---------------------------------------------------------------------------
 // 사이드바 경보 리스트
