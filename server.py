@@ -75,7 +75,6 @@ WARNING_CATEGORIES = {
     "미사일":   ["missile", "미사일"],
     "제재":     ["sanction", "제재"],
     "긴장":     ["tension", "긴장", "military", "border clash"],
-    "사이버공격": ["cyberattack", "사이버공격", "ransomware", "랜섬웨어", "data breach", "유출"],
     "장애":     ["outage", "장애", "disruption", "차질"],
     "부족":     ["shortage", "부족"],
 }
@@ -398,7 +397,7 @@ def mentions_country(text, country):
 # 뉴스 검색 쿼리에 사용할 인프라/재난 키워드 (영어 위주 + 국가명)
 QUERY_TERMS = (
     'earthquake OR flood OR typhoon OR hurricane OR wildfire OR "power outage" '
-    'OR blackout OR explosion OR war OR missile OR cyberattack OR "data center" '
+    'OR blackout OR explosion OR war OR missile OR "data center" '
     'OR infrastructure OR strike OR protest OR "state of emergency"'
 )
 
