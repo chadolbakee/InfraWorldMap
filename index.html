@@ -118,6 +118,10 @@
   .infra-badge{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;
     border-radius:10px;margin-left:6px;vertical-align:middle;
     background:rgba(56,139,253,.18);color:var(--blue);}
+  .region-tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;
+    border-radius:10px;margin-left:6px;vertical-align:middle;
+    background:rgba(139,148,158,.18);color:var(--text);}
+  .regions{font-size:11px;color:var(--muted);margin-top:4px;}
   /* 신선도 배지 */
   .fresh{display:inline-block;font-size:9px;font-weight:800;padding:1px 6px;
     border-radius:8px;margin-left:6px;vertical-align:middle;background:var(--red);color:#fff;}
@@ -614,6 +618,7 @@ function renderAlertList(){
           <span class="sev-tag ${a.severity}"></span>
           <a href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
           ${htag}
+          ${a.region?`<span class="region-tag">📍 ${a.region}</span>`:''}
           ${a.infra?'<span class="infra-badge">🏭 인프라</span>':''}
           ${fb}
           ${isNew?'<span class="new-badge">NEW</span>':''}
@@ -636,6 +641,7 @@ function renderAlertList(){
       <div class="meta" style="font-size:11px;color:var(--muted);margin-top:4px;">
         ${d?`심각 ${d.critical_count||0} · 주의 ${d.warning_count||0} · 총 ${cnt}`:""}
       </div>
+      ${(d&&d.regions&&d.regions.length)?`<div class="regions">📍 감지 지역: ${d.regions.join(', ')}</div>`:''}
       <div class="articles">${arts}</div>`;
     wrap.querySelector(".asset-head").addEventListener("click",()=>{
       wrap.classList.toggle("expanded");

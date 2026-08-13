@@ -394,6 +394,53 @@ def mentions_country(text, country):
     return any(p.search(text) for p in pats)
 
 
+# ---------------------------------------------------------------------------
+# 국가별 주요 도시/지역 — 기사에서 감지해 '어느 지역인지'(📍) 표시.
+#  (모든 도시가 아니라 인프라 관점의 주요 지역 위주)
+# ---------------------------------------------------------------------------
+COUNTRY_CITIES = {
+    "South Korea": [("서울",["seoul","서울"]),("부산",["busan","부산"]),("인천",["incheon","인천"]),
+        ("울산",["ulsan","울산"]),("대전",["daejeon","대전"]),("대구",["daegu","대구"]),
+        ("광주",["gwangju","광주"]),("여수",["yeosu","여수"]),("포항",["pohang","포항"])],
+    "Japan": [("도쿄",["tokyo","도쿄"]),("오사카",["osaka","오사카"]),("요코하마",["yokohama"]),
+        ("나고야",["nagoya"]),("후쿠오카",["fukuoka"]),("삿포로",["sapporo"]),
+        ("센다이",["sendai"]),("오키나와",["okinawa","오키나와"])],
+    "China": [("베이징",["beijing","베이징"]),("상하이",["shanghai","상하이"]),("광저우",["guangzhou"]),
+        ("선전",["shenzhen"]),("톈진",["tianjin"]),("청두",["chengdu"]),("우한",["wuhan"])],
+    "Saudi Arabia": [("리야드",["riyadh","리야드"]),("제다",["jeddah","제다"]),("담맘",["dammam","담맘"]),
+        ("메카",["mecca"]),("얀부",["yanbu"]),("주바일",["jubail"]),("아브카이크",["abqaiq"])],
+    "United States": [("뉴욕",["new york"]),("로스앤젤레스",["los angeles"]),("휴스턴",["houston"]),
+        ("시카고",["chicago"]),("워싱턴",["washington"]),("샌프란시스코",["san francisco"]),
+        ("텍사스",["texas"]),("캘리포니아",["california"]),("플로리다",["florida"]),("루이지애나",["louisiana"])],
+    "Canada": [("토론토",["toronto"]),("밴쿠버",["vancouver"]),("몬트리올",["montreal"]),
+        ("캘거리",["calgary"]),("오타와",["ottawa"]),("앨버타",["alberta"]),
+        ("브리티시컬럼비아",["british columbia"])],
+    "Mexico": [("멕시코시티",["mexico city"]),("과달라하라",["guadalajara"]),("몬테레이",["monterrey"]),
+        ("티후아나",["tijuana"]),("베라크루스",["veracruz"])],
+    "Germany": [("베를린",["berlin"]),("뮌헨",["munich"]),("함부르크",["hamburg"]),("프랑크푸르트",["frankfurt"])],
+    "France": [("파리",["paris"]),("마르세유",["marseille"]),("리옹",["lyon"])],
+    "India": [("델리",["delhi"]),("뭄바이",["mumbai"]),("첸나이",["chennai"]),
+        ("콜카타",["kolkata"]),("벵갈루루",["bengaluru","bangalore"])],
+    "Indonesia": [("자카르타",["jakarta"]),("수라바야",["surabaya"]),("발리",["bali"]),
+        ("수마트라",["sumatra"]),("술라웨시",["sulawesi"])],
+    "Australia": [("시드니",["sydney"]),("멜버른",["melbourne"]),("브리즈번",["brisbane"]),
+        ("퍼스",["perth"]),("캔버라",["canberra"])],
+    "United Kingdom": [("런던",["london"]),("맨체스터",["manchester"]),("버밍엄",["birmingham"]),
+        ("스코틀랜드",["scotland"])],
+    "Brazil": [("상파울루",["sao paulo"]),("리우데자네이루",["rio de janeiro"]),("브라질리아",["brasilia"])],
+}
+_CITY_PATS = {c: [(lab, [_loc_pattern(a) for a in al]) for lab, al in cities]
+              for c, cities in COUNTRY_CITIES.items()}
+
+
+def detect_city(text, country):
+    """헤드라인에서 국가 내 주요 도시/지역을 감지해 한국어 라벨 반환 (없으면 None)."""
+    for lab, pats in _CITY_PATS.get(country, []):
+        if any(p.search(text) for p in pats):
+            return lab
+    return None
+
+
 # 뉴스 검색 쿼리에 사용할 인프라/재난 키워드 (영어 위주 + 국가명)
 QUERY_TERMS = (
     'earthquake OR flood OR typhoon OR hurricane OR wildfire OR "power outage" '
@@ -504,6 +551,7 @@ def fetch_country(country, refinery_ok=None):
     url = build_rss_url(country)
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     articles = []
+    regions_found = set()
     level_rank = {"normal": 0, "warning": 1, "critical": 2}
     worst = "normal"
     try:
@@ -546,6 +594,9 @@ def fetch_country(country, refinery_ok=None):
                     sev = "warning"
             if level_rank[sev] > level_rank[worst]:
                 worst = sev
+            region = detect_city(headline, country) or ""
+            if region:
+                regions_found.add(region)
             articles.append({
                 "title": title,
                 "link": link,
@@ -555,6 +606,7 @@ def fetch_country(country, refinery_ok=None):
                 "matched": kw or "",
                 "tag": _KW_TAG.get(kw, "") if kw else "",
                 "infra": infra,
+                "region": region,
                 "age_hours": round(age, 1),
             })
     except Exception as e:  # noqa: BLE001
@@ -571,6 +623,7 @@ def fetch_country(country, refinery_ok=None):
         "count": len(articles),
         "critical_count": sum(1 for a in articles if a["severity"] == "critical"),
         "warning_count": sum(1 for a in articles if a["severity"] == "warning"),
+        "regions": sorted(regions_found),
         "articles": dedupe_by_tag(articles)[:MAX_ARTICLES],
         "updated": int(time.time()),
     }
