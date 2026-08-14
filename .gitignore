@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 .vercel/
+mail_config.json
+alert_seen.json

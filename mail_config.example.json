@@ -1,0 +1,7 @@
+{
+  "gmail_user": "shawnrock619@gmail.com",
+  "gmail_app_password": "여기에 Gmail 앱 비밀번호 16자리를 넣으세요 (공백 무관)",
+  "to": "shawnrock619@gmail.com",
+  "countries": ["South Korea", "Japan", "United States", "Saudi Arabia", "China", "Canada", "Mexico"],
+  "api_base": "https://infra-world-map.vercel.app"
+}
