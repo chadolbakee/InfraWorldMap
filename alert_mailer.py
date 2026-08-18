@@ -134,23 +134,89 @@ def build_email(cfg, fresh):
     return subject, text, html
 
 
+def recipients_of(cfg):
+    """to 를 리스트로 정규화 (리스트 또는 콤마구분 문자열 모두 허용)."""
+    to = cfg.get("to", "")
+    if isinstance(to, list):
+        return [x.strip() for x in to if x and x.strip()]
+    return [x.strip() for x in str(to).split(",") if x.strip()]
+
+
 def send_email(cfg, subject, text, html):
     user = cfg.get("gmail_user", "").strip()
     pw = cfg.get("gmail_app_password", "").replace(" ", "").strip()
-    to = cfg.get("to", "").strip()
+    to_list = recipients_of(cfg)
     if not user or not pw:
         raise RuntimeError("gmail_user / gmail_app_password 가 설정되지 않았습니다. "
                            "mail_config.json 을 확인하세요.")
+    if not to_list:
+        raise RuntimeError("수신자(to) 가 비어 있습니다.")
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = formataddr(("인프라 뉴스 모니터", user))
-    msg["To"] = to
+    msg["To"] = ", ".join(to_list)
     msg.attach(MIMEText(text, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
     ctx = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as server:
         server.login(user, pw)
-        server.sendmail(user, [to], msg.as_string())
+        server.sendmail(user, to_list, msg.as_string())
+
+
+_SEV_EMOJI = {"critical": "🔴", "warning": "🟡", "normal": "🟢", "unknown": "⚪"}
+_SEV_ORDER = {"critical": 0, "warning": 1, "normal": 2, "unknown": 3}
+
+
+def build_daily_email(cfg, data):
+    """모든 감시 국가의 현재 상태를 요약한 일일 메일."""
+    date = datetime.now().strftime("%Y-%m-%d")
+    items = [(c, v) for c, v in (data or {}).items() if isinstance(v, dict)]
+    items.sort(key=lambda kv: _SEV_ORDER.get(kv[1].get("level", "unknown"), 3))
+    ncrit = sum(v.get("critical_count", 0) for _, v in items)
+    nwarn = sum(v.get("warning_count", 0) for _, v in items)
+    subject = f"[인프라 일일요약] {date} · 경고 {ncrit} · 주의 {nwarn}"
+
+    lines = [f"글로벌 인프라 자산 뉴스 모니터 — 일일 요약 ({date})", ""]
+    rows_html = []
+    for c, v in items:
+        lvl = v.get("level", "unknown")
+        em = _SEV_EMOJI.get(lvl, "⚪")
+        regions = v.get("regions") or []
+        rtxt = ("  📍" + ", ".join(regions)) if regions else ""
+        lines.append(f"{em} {c} — 심각 {v.get('critical_count',0)} · 주의 {v.get('warning_count',0)}{rtxt}")
+        # 위험 기사 최대 2건
+        haz = [a for a in v.get("articles", []) if a.get("severity") in ("critical", "warning")][:2]
+        for a in haz:
+            tag = f"#{a.get('tag')}" if a.get("tag") else ""
+            lines.append(f"    - {tag} {a.get('title','')}")
+        rows_html.append(f"""
+          <div style="padding:8px 12px;margin:6px 0;background:#161b22;border-radius:6px;">
+            <div style="color:#e6edf3;font-size:15px;font-weight:600;">{em} {c}
+              <span style="color:#8b949e;font-size:12px;font-weight:400;">
+              심각 {v.get('critical_count',0)} · 주의 {v.get('warning_count',0)}{('  📍'+', '.join(regions)) if regions else ''}</span></div>
+            {''.join(f'<div style="color:#8b949e;font-size:13px;margin-top:3px;">• {("#"+a["tag"]) if a.get("tag") else ""} {a.get("title","")}</div>' for a in haz)}
+          </div>""")
+    lines.append("")
+    lines.append("대시보드: " + cfg["api_base"])
+    text = "\n".join(lines)
+    html = f"""<div style="font-family:sans-serif;background:#0d1117;padding:20px;">
+      <h2 style="color:#e6edf3;">📋 인프라 일일 요약 <span style="color:#8b949e;font-size:14px;">{date}</span></h2>
+      <div style="color:#8b949e;margin-bottom:10px;">경고 {ncrit}건 · 주의 {nwarn}건</div>
+      {''.join(rows_html)}
+      <p style="margin-top:16px;"><a href="{cfg['api_base']}" style="color:#388bfd;">대시보드 열기</a></p>
+    </div>"""
+    return subject, text, html
+
+
+def run_daily(cfg, dry_run=False):
+    data = fetch_news(cfg["api_base"], cfg["countries"])
+    subject, text, html = build_daily_email(cfg, data)
+    ts = datetime.now().strftime("%H:%M:%S")
+    if dry_run:
+        print(f"[{ts}] (DRY-RUN) 일일요약:\n{'='*60}\n{subject}\n{'-'*60}\n{text}\n{'='*60}")
+    else:
+        send_email(cfg, subject, text, html)
+        print(f"[{ts}] 일일 요약 메일 발송 완료: {subject}")
 
 
 def run_once(cfg, dry_run=False):
@@ -184,14 +250,21 @@ def send_test(cfg):
 
 
 def main():
+    try:  # Windows 콘솔(cp949)에서 이모지/특수문자 출력 시 크래시 방지
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
     ap = argparse.ArgumentParser()
     ap.add_argument("--loop", type=int, default=0, help="N초마다 반복 (0=1회)")
     ap.add_argument("--dry-run", action="store_true", help="메일 대신 화면 출력")
     ap.add_argument("--test", action="store_true", help="테스트 메일 1통")
+    ap.add_argument("--daily", action="store_true", help="일일 요약 메일 1통")
     args = ap.parse_args()
     cfg = load_config()
     if args.test:
         send_test(cfg); return
+    if args.daily:
+        run_daily(cfg, args.dry_run); return
     if args.loop > 0:
         print(f"감시 시작: {args.loop}초 간격, 대상 {cfg['countries']}")
         while True:
