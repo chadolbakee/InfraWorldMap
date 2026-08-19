@@ -4,3 +4,4 @@ __pycache__/
 .vercel/
 mail_config.json
 alert_seen.json
+alert_mailer.log

@@ -35,6 +35,23 @@ from email.utils import formataddr
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "mail_config.json")
 STATE_PATH = os.path.join(HERE, "alert_seen.json")
+LOG_PATH = os.path.join(HERE, "alert_mailer.log")
+
+
+def log(*args):
+    """로그파일 + (가능하면) 화면 출력. 콘솔 없는 스케줄러에서도 안 죽는다."""
+    msg = " ".join(str(a) for a in args)
+    line = f"{datetime.now():%Y-%m-%d %H:%M:%S} | {msg}"
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
+    except Exception:  # noqa: BLE001
+        pass
 DEFAULT_API = "https://infra-world-map.vercel.app"
 DEFAULT_COUNTRIES = ["South Korea", "Japan", "United States",
                      "Saudi Arabia", "China", "Canada", "Mexico"]
@@ -213,10 +230,10 @@ def run_daily(cfg, dry_run=False):
     subject, text, html = build_daily_email(cfg, data)
     ts = datetime.now().strftime("%H:%M:%S")
     if dry_run:
-        print(f"[{ts}] (DRY-RUN) 일일요약:\n{'='*60}\n{subject}\n{'-'*60}\n{text}\n{'='*60}")
+        log(f"[{ts}] (DRY-RUN) 일일요약:\n{'='*60}\n{subject}\n{'-'*60}\n{text}\n{'='*60}")
     else:
         send_email(cfg, subject, text, html)
-        print(f"[{ts}] 일일 요약 메일 발송 완료: {subject}")
+        log(f"[{ts}] 일일 요약 메일 발송 완료: {subject}")
 
 
 def run_once(cfg, dry_run=False):
@@ -226,14 +243,14 @@ def run_once(cfg, dry_run=False):
     fresh = [(c, a) for c, a in crit if a.get("link") and a["link"] not in seen]
     ts = datetime.now().strftime("%H:%M:%S")
     if not fresh:
-        print(f"[{ts}] 새 경고 없음 (경고 기사 총 {len(crit)}건, 모두 기존).")
+        log(f"[{ts}] 새 경고 없음 (경고 기사 총 {len(crit)}건, 모두 기존).")
         return
     subject, text, html = build_email(cfg, fresh)
     if dry_run:
-        print(f"[{ts}] (DRY-RUN) 발송할 메일:\n{'='*60}\n{subject}\n{'-'*60}\n{text}\n{'='*60}")
+        log(f"[{ts}] (DRY-RUN) 발송할 메일:\n{'='*60}\n{subject}\n{'-'*60}\n{text}\n{'='*60}")
     else:
         send_email(cfg, subject, text, html)
-        print(f"[{ts}] 메일 발송 완료: {subject}  → {cfg['to']}")
+        log(f"[{ts}] 메일 발송 완료: {subject}  → {cfg['to']}")
     # 첫 실행에서 모든 기존 경고까지 한꺼번에 안 보내도록, 발송했든 dry든 seen 갱신
     for _c, a in crit:
         if a.get("link"):
@@ -246,7 +263,7 @@ def send_test(cfg):
     text = "설정이 정상입니다. 실제 경고 발생 시 이런 형식으로 메일이 옵니다.\n대시보드: " + cfg["api_base"]
     html = f'<div style="font-family:sans-serif;"><h3>✅ 설정 정상</h3><p>실제 경고 발생 시 알림이 발송됩니다.</p><p><a href="{cfg["api_base"]}">대시보드</a></p></div>'
     send_email(cfg, subject, text, html)
-    print("테스트 메일 발송 완료 →", cfg["to"])
+    log("테스트 메일 발송 완료 →", cfg["to"])
 
 
 def main():
@@ -261,20 +278,27 @@ def main():
     ap.add_argument("--daily", action="store_true", help="일일 요약 메일 1통")
     args = ap.parse_args()
     cfg = load_config()
+    import traceback
+
+    def safe(fn, *a):
+        # 스케줄러 단발 실행: 예외가 나도 로그만 남기고 죽지 않게 (원인 추적용)
+        try:
+            fn(*a)
+        except Exception as e:  # noqa: BLE001
+            log("실패:", repr(e))
+            log(traceback.format_exc())
+
     if args.test:
-        send_test(cfg); return
+        safe(send_test, cfg); return
     if args.daily:
-        run_daily(cfg, args.dry_run); return
+        safe(run_daily, cfg, args.dry_run); return
     if args.loop > 0:
-        print(f"감시 시작: {args.loop}초 간격, 대상 {cfg['countries']}")
+        log(f"감시 시작: {args.loop}초 간격, 대상 {cfg['countries']}")
         while True:
-            try:
-                run_once(cfg, args.dry_run)
-            except Exception as e:  # noqa: BLE001
-                print("오류:", e, file=sys.stderr)
+            safe(run_once, cfg, args.dry_run)
             time.sleep(args.loop)
     else:
-        run_once(cfg, args.dry_run)
+        safe(run_once, cfg, args.dry_run)
 
 
 if __name__ == "__main__":
