@@ -209,6 +209,9 @@ NOISE_KEYWORDS = [
     "appeal for", "relief effort", "relief fund", "relief appeal",
     "aid appeal", "fundraiser", "fundraising", "charity", "donation",
     "성금", "모금", "구호",
+    # 해외 원조/구호 (재난은 다른 나라, 이 나라는 돕는 쪽)
+    "humanitarian", "humanitarian aid", "sends aid", "sending aid",
+    "aid convoy", "relief team", "rescue team to", "인도적", "구호물자", "긴급 지원",
     # 스포츠 대회 (축구 등)
     "cup", "matchday", "goalless", "final eight", "quarter-final", "semi-final",
     # 게임 / 소프트웨어 (예: "US-China war" 가 게임 mod 이야기)
