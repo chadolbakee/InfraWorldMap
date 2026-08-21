@@ -270,6 +270,9 @@ NOISE_KEYWORDS = [
     # 정책 / 입법 / 규제 (실제 사건이 아니라 제도·법안 뉴스)
     "regulation", "regulations", "legislation", "lawmakers", "ordinance",
     "rules", "building code", "zoning", "법안", "규제", "조례", "입법",
+    # 해외 대사관/영사관 여행경보 (재난은 주재국, 예: "U.S. Embassy in Peru")
+    "embassy", "consulate", "consular", "travel advisory", "travel alert",
+    "대사관", "영사관",
 ]
 _NOISE_PATS = _compile(NOISE_KEYWORDS)
 
