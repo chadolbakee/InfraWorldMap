@@ -267,6 +267,9 @@ NOISE_KEYWORDS = [
     "video game", "videogame", "게임", "gaming", "gameplay", "game mod",
     "modding", "esports", "e-sports", "playstation", "xbox", "nintendo",
     "company of heroes",
+    # 정책 / 입법 / 규제 (실제 사건이 아니라 제도·법안 뉴스)
+    "regulation", "regulations", "legislation", "lawmakers", "ordinance",
+    "rules", "building code", "zoning", "법안", "규제", "조례", "입법",
 ]
 _NOISE_PATS = _compile(NOISE_KEYWORDS)
 
