@@ -88,12 +88,22 @@ def save_seen(seen):
         json.dump(data, f, ensure_ascii=False)
 
 
-def fetch_news(api_base, countries):
+def fetch_news(api_base, countries, retries=4, delay=15):
+    """API 조회. 네트워크가 아직 안 올라왔을 때(절전 복귀 등)를 위해 재시도."""
     q = urllib.parse.quote(",".join(countries))
     url = f"{api_base.rstrip('/')}/api/news?countries={q}"
     req = urllib.request.Request(url, headers={"User-Agent": "infra-alert-mailer"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    last = None
+    for attempt in range(1, retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:  # noqa: BLE001
+            last = e
+            log(f"네트워크 시도 {attempt}/{retries} 실패: {e}")
+            if attempt < retries:
+                time.sleep(delay)
+    raise last
 
 
 def collect_critical(data):
