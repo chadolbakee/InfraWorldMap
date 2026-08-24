@@ -173,11 +173,21 @@ CASUALTY_KEYWORDS = [
 _CASUALTY_PATS = _compile(CASUALTY_KEYWORDS)
 
 
+_CAS_EN = (r"killed|kills|killing|dead|deaths|death toll|die|dies|died|fatal|"
+           r"fatalities|casualty|casualties|injure|injures|injured|injuring|"
+           r"injury|injuries|wounded|missing|trapped|buries|buried")
+_CAS_KO = r"사망|숨져|숨진|숨졌|부상|실종|매몰|인명피해|희생|사상자"
+# 'no/without/zero injuries' 같은 부정 표현은 제외
+_CASUALTY_RE = re.compile(
+    rf"(?<!no )(?<!without )(?<!zero )\b(?:{_CAS_EN})\b|{_CAS_KO}", re.I)
+
+
 def has_casualty(text):
-    for _kw, pat in _CASUALTY_PATS:
-        if pat.search(text):
-            return True
-    return False
+    return bool(_CASUALTY_RE.search(text))
+
+
+# 규모(magnitude) 언급 = 유의미한 지진 → 인프라 언급 없어도 경고
+_MAG_RE = re.compile(r"\bmagnitude\b|규모|\brichter\b", re.I)
 
 
 # 사건명(폭풍 이름 등)으로 같은 사건 묶기 — 태그가 달라도 같은 폭풍이면 하나로.
@@ -601,8 +611,17 @@ def fetch_country(country, refinery_ok=None):
     level_rank = {"normal": 0, "warning": 1, "critical": 2}
     worst = "normal"
     try:
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            raw = resp.read()
+        raw = None
+        for _att in range(2):   # 일시적 수집 실패 시 1회 재시도
+            try:
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    raw = resp.read()
+                break
+            except Exception:
+                if _att == 0:
+                    time.sleep(1)
+                    continue
+                raise
         root = ET.fromstring(raw)
         for item in root.iter("item"):
             title = _clean(item.findtext("title"))
@@ -632,12 +651,16 @@ def fetch_country(country, refinery_ok=None):
             if refinery_ok and refinery_incident(headline) \
                     and not should_demote(headline):
                 sev, kw = "critical", "refinery"
-            # 인프라 영향 게이팅: 경고(빨강)는 인프라 자산/운영 피해가 있을 때만.
-            #  한국은 인명피해도 경고로 인정. 그 외 자연재해는 주의로 강등.
+            # 인프라 영향 게이팅: 경고(빨강)는 아래 중 하나일 때만 유지.
+            #  ① 인프라 자산/운영 피해  ② 인명피해(전 지역)  ③ 규모 있는 지진/쓰나미
+            #  그 외 자연재해(인프라·인명피해 언급 없음)는 주의로 강등.
             infra = (kw == "refinery") or has_infra_impact(headline)
-            if sev == "critical" and not infra:
-                if not (country == "South Korea" and has_casualty(headline)):
-                    sev = "warning"
+            _tag = _KW_TAG.get(kw, "") if kw else ""
+            severe = (has_casualty(headline)
+                      or _tag == "쓰나미"
+                      or (_tag == "지진" and _MAG_RE.search(headline)))
+            if sev == "critical" and not infra and not severe:
+                sev = "warning"
             if level_rank[sev] > level_rank[worst]:
                 worst = sev
             region = detect_city(headline, country) or ""

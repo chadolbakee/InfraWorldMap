@@ -547,7 +547,16 @@ async function refreshNews(){
       if(!res.ok) throw new Error("서버 응답 "+res.status);
       return res.json();
     }));
-    latestData=Object.assign({},...parts);
+    const merged=Object.assign({},...parts);
+    // 이번에 '확인불가(unknown)'로 온 지역은 직전 정상값을 유지 (일시 실패로 회색 깜빡임 방지)
+    Object.keys(merged).forEach(en=>{
+      const nv=merged[en];
+      if((!nv || nv.level==="unknown") && latestData[en] && latestData[en].level
+          && latestData[en].level!=="unknown"){
+        merged[en]=latestData[en];
+      }
+    });
+    latestData=merged;
     statusText.textContent="마지막 업데이트 "+new Date().toLocaleTimeString("ko-KR");
     detectAndAlert();
   }catch(e){
