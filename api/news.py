@@ -488,6 +488,15 @@ def classify(text):
     return "normal", None
 
 
+# 따옴표 안의 위험 단어는 비유/인용이므로 심각도 판정에서 제외
+_QUOTE_RE = re.compile(r"[\"'‘’“”「」『』]"
+                       r".*?[\"'‘’“”「」『』]")
+
+
+def strip_quotes(text):
+    return _QUOTE_RE.sub(" ", text)
+
+
 def build_rss_url(country):
     hl, gl, ceid = COUNTRY_LOCALE.get(country, DEFAULT_LOCALE)
     query = f'{country} ({QUERY_TERMS}) when:2d'
@@ -557,8 +566,8 @@ def fetch_country(country, refinery_ok=None):
             age = parse_age_hours(pub)
             if age is None or age > MAX_AGE_HOURS:
                 continue
-            # 심각도는 순수 헤드라인으로만 판정 (요약은 관련기사·언론사명이 섞임)
-            sev, kw = classify(headline)
+            # 심각도는 순수 헤드라인으로만 판정 (따옴표 속 비유는 제외)
+            sev, kw = classify(strip_quotes(headline))
             # 게임/스포츠/연예 전문 매체발 기사는 강등
             if sev != "normal" and is_noise_source(source):
                 sev, kw = "normal", None
