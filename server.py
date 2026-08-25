@@ -723,7 +723,8 @@ def get_country_cached(country):
 # ---------------------------------------------------------------------------
 # 실측 재난 피드 (USGS 지진 + GDACS 태풍·홍수·화산·가뭄·산불) — 뉴스와 독립
 # ---------------------------------------------------------------------------
-USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson"
+USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson"
+MIN_QUAKE_MAG = 6.0   # 규모 6.0 미만 지진은 표시하지 않음
 GDACS_URL = "https://www.gdacs.org/xml/rss.xml"
 GDACS_NS = {"gdacs": "http://www.gdacs.org",
             "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#"}
@@ -744,9 +745,11 @@ def fetch_usgs():
             p = f.get("properties", {}) or {}
             c = (f.get("geometry", {}) or {}).get("coordinates") or [None, None]
             mag = p.get("mag") or 0
+            if mag < MIN_QUAKE_MAG:      # 규모 6.0 미만 제외
+                continue
             out.append({
                 "source": "USGS", "type": "지진",
-                "severity": "critical" if mag >= 6.0 else "warning",
+                "severity": "critical",
                 "title": f"규모 {mag:.1f} 지진 · {p.get('place','') or ''}",
                 "place": p.get("place", "") or "", "mag": round(mag, 1),
                 "lat": c[1], "lon": c[0], "time": p.get("time"),

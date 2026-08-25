@@ -16,7 +16,8 @@ import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler
 
 UA = {"User-Agent": "infra-monitor-disasters"}
-USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson"
+USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson"
+MIN_QUAKE_MAG = 6.0   # 규모 6.0 미만 지진은 표시하지 않음
 GDACS_URL = "https://www.gdacs.org/xml/rss.xml"
 GDACS_NS = {"gdacs": "http://www.gdacs.org",
             "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#"}
@@ -37,10 +38,11 @@ def fetch_usgs():
             p = f.get("properties", {}) or {}
             c = (f.get("geometry", {}) or {}).get("coordinates") or [None, None, None]
             mag = p.get("mag") or 0
-            sev = "critical" if mag >= 6.0 else "warning"
+            if mag < MIN_QUAKE_MAG:      # 규모 6.0 미만 제외
+                continue
             place = p.get("place", "") or ""
             out.append({
-                "source": "USGS", "type": "지진", "severity": sev,
+                "source": "USGS", "type": "지진", "severity": "critical",
                 "title": f"규모 {mag:.1f} 지진 · {place}",
                 "place": place, "mag": round(mag, 1),
                 "lat": c[1], "lon": c[0],
