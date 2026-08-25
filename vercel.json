@@ -2,6 +2,9 @@
   "functions": {
     "api/news.py": {
       "maxDuration": 30
+    },
+    "api/disasters.py": {
+      "maxDuration": 30
     }
   }
 }

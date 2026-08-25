@@ -721,6 +721,84 @@ def get_country_cached(country):
 
 
 # ---------------------------------------------------------------------------
+# 실측 재난 피드 (USGS 지진 + GDACS 태풍·홍수·화산·가뭄·산불) — 뉴스와 독립
+# ---------------------------------------------------------------------------
+USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson"
+GDACS_URL = "https://www.gdacs.org/xml/rss.xml"
+GDACS_NS = {"gdacs": "http://www.gdacs.org",
+            "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#"}
+GDACS_TYPE = {"EQ": "지진", "TC": "태풍", "FL": "홍수",
+              "VO": "화산", "DR": "가뭄", "WF": "산불", "TS": "쓰나미"}
+
+
+def _http_get(url, timeout=12):
+    return urllib.request.urlopen(
+        urllib.request.Request(url, headers={"User-Agent": UA}), timeout=timeout).read()
+
+
+def fetch_usgs():
+    out = []
+    try:
+        d = json.loads(_http_get(USGS_URL))
+        for f in d.get("features", []):
+            p = f.get("properties", {}) or {}
+            c = (f.get("geometry", {}) or {}).get("coordinates") or [None, None]
+            mag = p.get("mag") or 0
+            out.append({
+                "source": "USGS", "type": "지진",
+                "severity": "critical" if mag >= 6.0 else "warning",
+                "title": f"규모 {mag:.1f} 지진 · {p.get('place','') or ''}",
+                "place": p.get("place", "") or "", "mag": round(mag, 1),
+                "lat": c[1], "lon": c[0], "time": p.get("time"),
+                "url": p.get("url", ""), "tsunami": bool(p.get("tsunami")),
+            })
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def fetch_gdacs():
+    out = []
+    try:
+        root = ET.fromstring(_http_get(GDACS_URL))
+        for it in root.findall(".//item"):
+            al = (it.findtext("gdacs:alertlevel", namespaces=GDACS_NS) or "").strip()
+            et = (it.findtext("gdacs:eventtype", namespaces=GDACS_NS) or "").strip()
+            if et == "EQ" or al not in ("Orange", "Red"):
+                continue
+            lat = it.findtext(".//geo:lat", namespaces=GDACS_NS)
+            lon = it.findtext(".//geo:long", namespaces=GDACS_NS)
+            out.append({
+                "source": "GDACS", "type": GDACS_TYPE.get(et, et),
+                "severity": "critical" if al == "Red" else "warning",
+                "title": (it.findtext("title", "") or "").strip(),
+                "place": (it.findtext("gdacs:country", namespaces=GDACS_NS) or "").strip(),
+                "lat": float(lat) if lat else None,
+                "lon": float(lon) if lon else None,
+                "time": (it.findtext("pubDate", "") or "").strip(),
+                "url": (it.findtext("link", "") or "").strip(),
+            })
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+_disaster_cache = {"t": 0, "data": None}
+
+
+def get_disasters_cached():
+    now = time.time()
+    if _disaster_cache["data"] and now - _disaster_cache["t"] < CACHE_TTL:
+        return _disaster_cache["data"]
+    events = fetch_usgs() + fetch_gdacs()
+    order = {"critical": 0, "warning": 1, "normal": 2}
+    events.sort(key=lambda e: order.get(e["severity"], 3))
+    data = {"events": events[:80], "updated": int(now)}
+    _disaster_cache.update(t=now, data=data)
+    return data
+
+
+# ---------------------------------------------------------------------------
 # HTTP 핸들러
 # ---------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -774,6 +852,11 @@ class Handler(BaseHTTPRequestHandler):
             for t in threads:
                 t.join()
             self._send(200, json.dumps(results, ensure_ascii=False),
+                       "application/json; charset=utf-8")
+            return
+
+        if path == "/api/disasters":
+            self._send(200, json.dumps(get_disasters_cached(), ensure_ascii=False),
                        "application/json; charset=utf-8")
             return
 

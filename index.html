@@ -132,6 +132,17 @@
   /* 지도 마커 반짝임 */
   @keyframes mapblink{0%,100%{opacity:1;}50%{opacity:.3;}}
   .blink-marker{animation:mapblink 1.6s ease-in-out infinite;cursor:pointer;}
+  /* 실측 재난 마커/목록 */
+  .dmark{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;
+    justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 0 8px rgba(0,0,0,.6);}
+  .dmark.critical{background:rgba(248,81,73,.95);}
+  .dmark.warning{background:rgba(210,153,34,.95);}
+  #disasterList{max-height:200px;overflow-y:auto;}
+  .drow{padding:7px 4px;border-top:1px solid var(--border);cursor:pointer;font-size:12px;}
+  .drow:first-child{border-top:none;}
+  .drow:hover{background:var(--bg);}
+  .drow .dsrc{color:var(--muted);font-size:10px;margin-left:5px;}
+  .drow .dttl{color:var(--muted);margin-top:2px;line-height:1.35;}
 </style>
 </head>
 <body>
@@ -164,6 +175,11 @@
         <label><input type="checkbox" id="soundToggle" checked /> 🔊 소리</label>
         <label><input type="checkbox" id="notifToggle" /> 🔔 데스크톱 알림</label>
       </div>
+    </div>
+
+    <div class="section" id="disasterSection">
+      <h2>🛰 실측 재난 · 전 세계 (USGS·GDACS)</h2>
+      <div id="disasterList"><div class="empty">불러오는 중…</div></div>
     </div>
 
     <div class="section" style="padding-bottom:8px;">
@@ -660,12 +676,54 @@ function renderAlertList(){
 }
 
 // ---------------------------------------------------------------------------
+// 🛰 실측 재난 피드 (USGS·GDACS) — 전 세계, 뉴스와 독립. 자연재해 누락 방지.
+// ---------------------------------------------------------------------------
+const DTYPE_EMOJI={"지진":"🌐","태풍":"🌀","홍수":"🌊","화산":"🌋","산불":"🔥","가뭄":"🏜️","쓰나미":"🌊"};
+let dmarkers=[];
+const disasterList=document.getElementById("disasterList");
+
+function renderDisasters(events){
+  dmarkers.forEach(m=>map.removeLayer(m)); dmarkers=[];
+  events.forEach(e=>{
+    if(e.lat==null||e.lon==null) return;
+    const em=DTYPE_EMOJI[e.type]||"⚠️";
+    const icon=L.divIcon({html:`<div class="dmark ${e.severity}">${em}</div>`,
+      className:"", iconSize:[28,28], iconAnchor:[14,14]});
+    const m=L.marker([e.lat,e.lon],{icon}).addTo(map);
+    m.bindPopup(`<b>${em} ${e.type}</b> · ${e.source}<br>${e.title}`
+      +(e.url?`<br><a href="${e.url}" target="_blank" rel="noopener">자세히</a>`:""));
+    dmarkers.push(m);
+  });
+  if(!events.length){ disasterList.innerHTML='<div class="empty">최근 실측 재난 없음</div>'; return; }
+  disasterList.innerHTML=events.map((e,i)=>{
+    const em=DTYPE_EMOJI[e.type]||"⚠️";
+    return `<div class="drow" data-i="${i}">
+      <span class="lamp ${e.severity}"></span>${em} <b>#${e.type}</b>
+      <span class="dsrc">${e.source}${e.place?" · "+e.place:""}</span>
+      <div class="dttl">${e.title}</div></div>`;
+  }).join("");
+  [...disasterList.querySelectorAll(".drow")].forEach(el=>{
+    const e=events[+el.dataset.i];
+    el.addEventListener("click",()=>{ if(e.lat!=null&&e.lon!=null) map.setView([e.lat,e.lon],5); });
+  });
+}
+
+async function refreshDisasters(){
+  try{
+    const res=await fetch("/api/disasters",{cache:"no-store"});
+    if(res.ok){ const d=await res.json(); renderDisasters(d.events||[]); }
+  }catch(e){ /* 실패 시 기존 표시 유지 */ }
+  setTimeout(refreshDisasters, REFRESH_MS);
+}
+
+// ---------------------------------------------------------------------------
 // 시작
 // ---------------------------------------------------------------------------
 renderOptions();
 renderChips();
 syncMarkers();
 refreshNews();
+refreshDisasters();
 </script>
 </body>
 </html>
