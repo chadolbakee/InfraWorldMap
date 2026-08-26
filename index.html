@@ -284,8 +284,9 @@ let alertedLinks = new Set();            // 이번 세션에서 새로 뜬 기�
 // 지도 초기화
 // ---------------------------------------------------------------------------
 const map = L.map("map",{worldCopyJump:true}).setView([25,20],2);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{
-  attribution:"© OpenStreetMap, © CARTO", subdomains:"abcd", maxZoom:8
+// 다크 베이스맵 — Esri (API 키 불필요). CARTO 는 이제 키를 요구해서 교체.
+L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",{
+  attribution:"Tiles © Esri", maxZoom:16
 }).addTo(map);
 
 // ---------------------------------------------------------------------------

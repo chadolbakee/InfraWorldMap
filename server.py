@@ -732,9 +732,24 @@ GDACS_TYPE = {"EQ": "지진", "TC": "태풍", "FL": "홍수",
               "VO": "화산", "DR": "가뭄", "WF": "산불", "TS": "쓰나미"}
 
 
-def _http_get(url, timeout=12):
+def _http_get(url, timeout=8):
     return urllib.request.urlopen(
         urllib.request.Request(url, headers={"User-Agent": UA}), timeout=timeout).read()
+
+
+def _bounded(fn, seconds=12):
+    """느린 피드가 응답을 찔끔찔끔 보내도 매달리지 않게 하드 데드라인."""
+    box = [[]]
+
+    def run():
+        try:
+            box[0] = fn()
+        except Exception:  # noqa: BLE001
+            box[0] = []
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(seconds)
+    return box[0]
 
 
 def fetch_usgs():
@@ -793,7 +808,12 @@ def get_disasters_cached():
     now = time.time()
     if _disaster_cache["data"] and now - _disaster_cache["t"] < CACHE_TTL:
         return _disaster_cache["data"]
-    events = fetch_usgs() + fetch_gdacs()
+    # 두 피드를 각각 하드 데드라인으로 (한쪽이 느려도 다른 쪽은 표시)
+    ru, rg = [[]], [[]]
+    tu = threading.Thread(target=lambda: ru.__setitem__(0, _bounded(fetch_usgs)), daemon=True)
+    tg = threading.Thread(target=lambda: rg.__setitem__(0, _bounded(fetch_gdacs)), daemon=True)
+    tu.start(); tg.start(); tu.join(14); tg.join(14)
+    events = ru[0] + rg[0]
     order = {"critical": 0, "warning": 1, "normal": 2}
     events.sort(key=lambda e: order.get(e["severity"], 3))
     data = {"events": events[:80], "updated": int(now)}
