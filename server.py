@@ -98,7 +98,7 @@ _KW_TAG["infra_incident"] = "인프라피해"   # 자산+사고 정황 승격용
 REFINERY_REGIONS = {"South Korea", "Saudi Arabia", "Mexico",
                     "United States", "Canada"}
 
-_REFINERY_RE = re.compile(r"\brefinery\b|정유공장|정유시설", re.I)
+_REFINERY_RE = re.compile(r"\brefinery\b|\bsatorp\b|\bsasref\b|정유공장|정유시설", re.I)
 _ACCIDENT_RE = re.compile(
     r"\b(fire|blaze|explosion|blast|exploded|leak|leaks|spill|outage|"
     r"evacuat\w*|killed|injured|injuries|damage\w*|destroyed|blackout)\b"
@@ -141,6 +141,7 @@ INFRA_IMPACT_KEYWORDS = [
     # 담수화·복합발전 (우리 자산 유형)
     "desalination", "담수화", "combined cycle", "복합화력", "복합발전", "gas-fired",
     "oil facility", "oil field", "gas facility", "oil installation",
+    "satorp", "sasref",
     # 교통·물류 (물리적 시설 피해 위주. 단순 결항/지연은 인프라 피해로 안 봄)
     "port", "항만", "항구", "airport", "공항", "railway", "railroad",
     "철도", "highway", "고속도로", "bridge", "교량", "tunnel", "터널",
@@ -198,6 +199,7 @@ _MAG_RE = re.compile(r"\bmagnitude\b|규모|\brichter\b", re.I)
 _INCIDENT_RE = re.compile(
     r"\b(fire|blaze|explosion|blast|exploded|leak|leaks|spill|rupture|outage|"
     r"shutdown|shut down|halt|halts|halted|damage\w*|destroyed|attack|attacked|"
+    r"drone|struck|"
     r"sabotage|evacuat\w*|disrupt\w*|suspend\w*|offline|blackout)\b"
     r"|화재|폭발|누출|유출|사고|파손|손상|가동중단|가동 중단|공격|폭음", re.I)
 
@@ -449,7 +451,8 @@ COUNTRY_CITIES = {
         ("선전",["shenzhen"]),("톈진",["tianjin"]),("청두",["chengdu"]),("우한",["wuhan"]),
         ("충칭",["chongqing"]),("시안",["xi'an","xian"]),("항저우",["hangzhou"]),("난징",["nanjing"]),
         ("다롄",["dalian"]),("칭다오",["qingdao"]),("쓰촨",["sichuan"]),("광둥",["guangdong"])],
-    "Saudi Arabia": [("리야드",["riyadh","리야드"]),("제다",["jeddah","제다"]),("담맘",["dammam","담맘"]),
+    "Saudi Arabia": [("SATORP",["satorp"]),("SASREF",["sasref"]),
+        ("리야드",["riyadh","리야드"]),("제다",["jeddah","제다"]),("담맘",["dammam","담맘"]),
         ("메카",["mecca"]),("얀부",["yanbu","얀부"]),("주바일",["jubail","주바일"]),
         ("아브카이크",["abqaiq","아브카이크"]),("라스타누라",["ras tanura","라스타누라"]),
         ("메디나",["medina"]),("타이프",["taif"]),("코바르",["khobar"]),("카티프",["qatif"]),
