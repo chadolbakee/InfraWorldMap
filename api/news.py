@@ -329,6 +329,13 @@ LOCATION_ALIASES = {
     "Nigeria": ["nigeria", "nigerian", "lagos", "abuja", "나이지리아"],
     "Russia": ["russia", "russian", "moscow", "러시아", "모스크바"],
     "Ukraine": ["ukraine", "ukrainian", "kyiv", "kiev", "우크라이나", "키이우", "키예프"],
+    "Belgium": ["belgium", "belgian", "brussels", "벨기에", "브뤼셀"],
+    "Portugal": ["portugal", "portuguese", "lisbon", "porto", "포르투갈", "리스본"],
+    "Finland": ["finland", "finnish", "helsinki", "핀란드", "헬싱키"],
+    "Luxembourg": ["luxembourg", "룩셈부르크"],
+    "Norway": ["norway", "norwegian", "oslo", "노르웨이", "오슬로"],
+    "Austria": ["austria", "austrian", "vienna", "오스트리아", "비엔나"],
+    "Colombia": ["colombia", "colombian", "bogota", "bogotá", "medellin", "콜롬비아", "보고타"],
 }
 
 
@@ -436,6 +443,13 @@ COUNTRY_CITIES = {
     "Nigeria": [("라고스",["lagos"]),("아부자",["abuja"]),("카노",["kano"]),("포트하커트",["port harcourt"])],
     "Russia": [("모스크바",["moscow"]),("상트페테르부르크",["st petersburg","saint petersburg"]),("노보시비르스크",["novosibirsk"])],
     "Ukraine": [("키이우",["kyiv","kiev"]),("하르키우",["kharkiv"]),("오데사",["odesa","odessa"]),("마리우폴",["mariupol"])],
+    "Belgium": [("브뤼셀",["brussels"]),("앤트워프",["antwerp"]),("겐트",["ghent"]),("리에주",["liege"])],
+    "Portugal": [("리스본",["lisbon"]),("포르투",["porto"]),("브라가",["braga"])],
+    "Finland": [("헬싱키",["helsinki"]),("탐페레",["tampere"]),("투르쿠",["turku"]),("에스포",["espoo"])],
+    "Luxembourg": [("룩셈부르크",["luxembourg"])],
+    "Norway": [("오슬로",["oslo"]),("베르겐",["bergen"]),("스타방에르",["stavanger"]),("트론헤임",["trondheim"])],
+    "Austria": [("비엔나",["vienna"]),("잘츠부르크",["salzburg"]),("그라츠",["graz"]),("린츠",["linz"])],
+    "Colombia": [("보고타",["bogota","bogotá"]),("메데인",["medellin"]),("칼리",["cali"]),("바랑키야",["barranquilla"]),("카르타헤나",["cartagena"])],
 }
 _CITY_PATS = {c: [(lab, [_loc_pattern(a) for a in al]) for lab, al in cities]
               for c, cities in COUNTRY_CITIES.items()}
