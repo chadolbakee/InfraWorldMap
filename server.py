@@ -53,8 +53,9 @@ CRITICAL_CATEGORIES = {
     "인프라피해": ["pipeline rupture", "송유관", "data center outage", "데이터센터 화재"],
     "LNG터미널": ["lng terminal", "lng plant", "LNG 터미널", "액화천연가스 터미널"],
     "해저케이블": ["submarine cable", "subsea cable", "해저케이블", "해저 케이블"],
-    "공습":     ["airstrike", "air strike", "drone strike", "공습",
-                 "missile strike", "invasion", "침공"],
+    "공습":     ["airstrike", "air strike", "drone strike", "drone attack",
+                 "missile attack", "air raid", "공습", "missile strike",
+                 "invasion", "침공"],
     "테러":     ["terror attack", "테러", "sabotage"],
     "쿠데타":   ["coup", "쿠데타"],
     "대피":     ["evacuation ordered", "evacuate", "대피령", "대피"],
@@ -87,6 +88,7 @@ for _tag, _kws in {**CRITICAL_CATEGORIES, **WARNING_CATEGORIES}.items():
     for _kw in _kws:
         _KW_TAG[_kw] = _tag
 _KW_TAG["refinery"] = "정유시설"   # refinery 는 아래 특례 규칙으로 처리
+_KW_TAG["infra_incident"] = "인프라피해"   # 자산+사고 정황 승격용
 
 # ---------------------------------------------------------------------------
 # 정유시설(refinery) 특례
@@ -134,8 +136,11 @@ INFRA_IMPACT_KEYWORDS = [
     "변압기", "power line", "transmission line", "송전", "power grid",
     "grid", "전력망", "power outage", "blackout", "정전", "단전",
     # 석유·가스
-    "pipeline", "송유관", "가스관", "refinery", "정유공장", "정유시설",
+    "pipeline", "송유관", "가스관", "petroline", "refinery", "정유공장", "정유시설",
     "lng terminal", "oil terminal", "gas terminal",
+    # 담수화·복합발전 (우리 자산 유형)
+    "desalination", "담수화", "combined cycle", "복합화력", "복합발전", "gas-fired",
+    "oil facility", "oil field", "gas facility", "oil installation",
     # 교통·물류 (물리적 시설 피해 위주. 단순 결항/지연은 인프라 피해로 안 봄)
     "port", "항만", "항구", "airport", "공항", "railway", "railroad",
     "철도", "highway", "고속도로", "bridge", "교량", "tunnel", "터널",
@@ -188,6 +193,13 @@ def has_casualty(text):
 
 # 규모(magnitude) 언급 = 유의미한 지진 → 인프라 언급 없어도 경고
 _MAG_RE = re.compile(r"\bmagnitude\b|규모|\brichter\b", re.I)
+
+# 인프라 자산 '사고 정황' — 자산 키워드와 함께 나오면 경고로 승격
+_INCIDENT_RE = re.compile(
+    r"\b(fire|blaze|explosion|blast|exploded|leak|leaks|spill|rupture|outage|"
+    r"shutdown|shut down|halt|halts|halted|damage\w*|destroyed|attack|attacked|"
+    r"sabotage|evacuat\w*|disrupt\w*|suspend\w*|offline|blackout)\b"
+    r"|화재|폭발|누출|유출|사고|파손|손상|가동중단|가동 중단|공격|폭음", re.I)
 
 
 # 사건명(폭풍 이름 등)으로 같은 사건 묶기 — 태그가 달라도 같은 폭풍이면 하나로.
@@ -406,11 +418,17 @@ def strip_source(title, source):
 
 
 def mentions_country(text, country):
-    """헤드라인에 해당 국가/도시가 실제로 언급됐는지."""
+    """헤드라인에 해당 국가 또는 그 나라 주요 도시/자산 지명이 언급됐는지."""
     pats = _LOC_PATS.get(country)
+    if pats and any(p.search(text) for p in pats):
+        return True
+    # 국가명이 없어도 그 나라 주요 도시/자산 지명이 나오면 인정
+    for _lab, cpats in _CITY_PATS.get(country, []):
+        if any(p.search(text) for p in cpats):
+            return True
     if not pats:                       # 별칭 사전에 없는 국가 -> 이름 그대로 검사
         return country.lower() in text.lower()
-    return any(p.search(text) for p in pats)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -432,8 +450,13 @@ COUNTRY_CITIES = {
         ("충칭",["chongqing"]),("시안",["xi'an","xian"]),("항저우",["hangzhou"]),("난징",["nanjing"]),
         ("다롄",["dalian"]),("칭다오",["qingdao"]),("쓰촨",["sichuan"]),("광둥",["guangdong"])],
     "Saudi Arabia": [("리야드",["riyadh","리야드"]),("제다",["jeddah","제다"]),("담맘",["dammam","담맘"]),
-        ("메카",["mecca"]),("얀부",["yanbu"]),("주바일",["jubail"]),("아브카이크",["abqaiq"]),
-        ("라스타누라",["ras tanura"]),("메디나",["medina"]),("타이프",["taif"]),("코바르",["khobar"]),("카티프",["qatif"])],
+        ("메카",["mecca"]),("얀부",["yanbu","얀부"]),("주바일",["jubail","주바일"]),
+        ("아브카이크",["abqaiq","아브카이크"]),("라스타누라",["ras tanura","라스타누라"]),
+        ("메디나",["medina"]),("타이프",["taif"]),("코바르",["khobar"]),("카티프",["qatif"]),
+        # 우리 회사 자산 관련 지역 (동서송유관·발전소·담수화 등)
+        ("라빅",["rabigh","rabec","라빅"]),("라스알카이르",["ras al-khair","ras al khair","ras al-ju'aymah"]),
+        ("샤이바",["shaybah"]),("가와르",["ghawar"]),("쿠라이스",["khurais"]),
+        ("사파니야",["safaniya"]),("동서송유관",["petroline","east-west pipeline","east–west pipeline"])],
     "United States": [("뉴욕",["new york"]),("로스앤젤레스",["los angeles"]),("휴스턴",["houston"]),
         ("시카고",["chicago"]),("워싱턴",["washington"]),("샌프란시스코",["san francisco"]),
         ("텍사스",["texas"]),("캘리포니아",["california"]),("플로리다",["florida"]),("루이지애나",["louisiana"]),
@@ -661,6 +684,11 @@ def fetch_country(country, refinery_ok=None):
             if refinery_ok and refinery_incident(headline) \
                     and not should_demote(headline):
                 sev, kw = "critical", "refinery"
+            # 인프라 자산 사고 승격: 자산 키워드 + 사고 정황이면 경고
+            #  (송유관 누출, 발전소·담수화 가동중단, 시설 공격 등 자산 이슈 누락 방지)
+            if sev != "critical" and has_infra_impact(headline) \
+                    and _INCIDENT_RE.search(headline) and not should_demote(headline):
+                sev, kw = "critical", "infra_incident"
             # 인프라 영향 게이팅: 경고(빨강)는 아래 중 하나일 때만 유지.
             #  ① 인프라 자산/운영 피해  ② 인명피해(전 지역)  ③ 규모 있는 지진/쓰나미
             #  그 외 자연재해(인프라·인명피해 언급 없음)는 주의로 강등.
