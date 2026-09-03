@@ -297,6 +297,10 @@ NOISE_KEYWORDS = [
     # 해외 대사관/영사관 여행경보 (재난은 주재국, 예: "U.S. Embassy in Peru")
     "embassy", "consulate", "consular", "travel advisory", "travel alert",
     "대사관", "영사관",
+    # 사이버/보안 작전·차단 발표 (인프라 '피격'이 아니라 위협 차단·경고)
+    "cyber operation", "cyber campaign", "cyberattack", "cyberespionage",
+    "cyber espionage", "cybersecurity", "hackers", "hacking", "malware",
+    "ransomware", "phishing", "foils", "thwarts", "foiled", "thwarted",
 ]
 _NOISE_PATS = _compile(NOISE_KEYWORDS)
 
