@@ -3,7 +3,8 @@
 인프라 뉴스 모니터 - 경고 메일 알림 (로컬 실행용)
 
 배포된 API를 조회해서 '경고(critical)' 등급 뉴스가 새로 뜨면
-지정한 메일로 알림을 보낸다. 같은 경보는 중복 발송하지 않는다.
+지정한 메일로 알림을 보낸다.
+같은 사건(국가·위험유형·지역)은 하루 1회만 발송한다(반복 발송 방지).
 
 설정: mail_config.json (mail_config.example.json 을 복사해서 채우기)
       또는 환경변수 (ALERT_GMAIL_USER / ALERT_GMAIL_APP_PASSWORD / ALERT_TO ...)
@@ -246,14 +247,27 @@ def run_daily(cfg, dry_run=False):
         log(f"[{ts}] 일일 요약 메일 발송 완료: {subject}")
 
 
+def event_key(country, a, day):
+    """중복방지 단위: 같은 국가·위험유형·지역은 하루 1회만 발송.
+    (구글뉴스가 같은 사건을 매체·URL만 바꿔 계속 물어와도 반복 발송 안 됨.)"""
+    return f"evt|{day}|{country}|{a.get('tag','')}|{a.get('region','')}"
+
+
 def run_once(cfg, dry_run=False):
     data = fetch_news(cfg["api_base"], cfg["countries"])
     crit = collect_critical(data)
     seen = load_seen()
-    fresh = [(c, a) for c, a in crit if a.get("link") and a["link"] not in seen]
+    day = datetime.now().strftime("%Y-%m-%d")
+    fresh, fresh_keys = [], set()
+    for c, a in crit:
+        ek = event_key(c, a, day)
+        if ek in seen or ek in fresh_keys:   # 오늘 이미 보낸 사건은 건너뜀
+            continue
+        fresh.append((c, a))
+        fresh_keys.add(ek)
     ts = datetime.now().strftime("%H:%M:%S")
     if not fresh:
-        log(f"[{ts}] 새 경고 없음 (경고 기사 총 {len(crit)}건, 모두 기존).")
+        log(f"[{ts}] 새 경고 없음 (경고 기사 총 {len(crit)}건, 오늘 발송분과 중복).")
         return
     subject, text, html = build_email(cfg, fresh)
     if dry_run:
@@ -261,10 +275,9 @@ def run_once(cfg, dry_run=False):
     else:
         send_email(cfg, subject, text, html)
         log(f"[{ts}] 메일 발송 완료: {subject}  → {cfg['to']}")
-    # 첫 실행에서 모든 기존 경고까지 한꺼번에 안 보내도록, 발송했든 dry든 seen 갱신
-    for _c, a in crit:
-        if a.get("link"):
-            seen.add(a["link"])
+    # 발송했든 dry든, 오늘 뜬 모든 경고 사건을 '오늘 발송분'으로 기록
+    for c, a in crit:
+        seen.add(event_key(c, a, day))
     save_seen(seen)
 
 
