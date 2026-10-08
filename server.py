@@ -138,6 +138,8 @@ INFRA_IMPACT_KEYWORDS = [
     # 석유·가스
     "pipeline", "송유관", "가스관", "petroline", "refinery", "정유공장", "정유시설",
     "lng terminal", "oil terminal", "gas terminal",
+    "pumping station", "pumping stations", "pump station", "pump stations",
+    "oil station", "oil stations", "펌핑스테이션", "가압장",
     # 담수화·복합발전 (우리 자산 유형)
     "desalination", "담수화", "combined cycle", "복합화력", "복합발전", "gas-fired",
     "oil facility", "oil field", "gas facility", "oil installation",
