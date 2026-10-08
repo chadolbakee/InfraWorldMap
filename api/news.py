@@ -161,9 +161,9 @@ _MAG_RE = re.compile(r"\bmagnitude\b|규모|\brichter\b", re.I)
 _INCIDENT_RE = re.compile(
     r"\b(fire|blaze|explosion|blast|exploded|leak|leaks|spill|rupture|outage|"
     r"shutdown|shut down|halt|halts|halted|damage\w*|destroyed|attack|attacked|"
-    r"drone|struck|"
+    r"drone\w*|struck|missile\w*|rocket\w*|shelling|shelled|bombard\w*|"
     r"sabotage|evacuat\w*|disrupt\w*|suspend\w*|offline|blackout)\b"
-    r"|화재|폭발|누출|유출|사고|파손|손상|가동중단|가동 중단|공격|폭음", re.I)
+    r"|화재|폭발|누출|유출|사고|파손|손상|가동중단|가동 중단|공격|폭음|피격|타격|포격", re.I)
 
 
 _STORM_RE = re.compile(

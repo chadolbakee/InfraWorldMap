@@ -37,6 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "mail_config.json")
 STATE_PATH = os.path.join(HERE, "alert_seen.json")
 LOG_PATH = os.path.join(HERE, "alert_mailer.log")
+HISTORY_PATH = os.path.join(HERE, "alert_history.jsonl")
 
 
 def log(*args):
@@ -186,7 +187,10 @@ def send_email(cfg, subject, text, html):
     msg.attach(MIMEText(text, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
     ctx = ssl.create_default_context()
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as server:
+    # local_hostname 을 ascii 로 고정: PC 호스트명에 한글이 있으면(예: '산타.Davolink')
+    # smtplib 이 EHLO 전송 중 UnicodeEncodeError 로 죽는 문제를 방지한다.
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx,
+                          local_hostname="localhost") as server:
         server.login(user, pw)
         server.sendmail(user, to_list, msg.as_string())
 
@@ -247,6 +251,31 @@ def run_daily(cfg, dry_run=False):
         log(f"[{ts}] 일일 요약 메일 발송 완료: {subject}")
 
 
+def append_history(fresh):
+    """새로 감지된 경고를 이력 파일(alert_history.jsonl)에 1줄씩 기록한다.
+    메일 발송 여부와 무관하게, '언제 처음 뜬 경고인지'를 나중에 되짚기 위함.
+    (주의: 실행기가 도는 동안에만 기록됨 — PC가 꺼져 있던 시간대는 공백.)"""
+    if not fresh:
+        return
+    now = datetime.now().isoformat(timespec="seconds")
+    try:
+        with open(HISTORY_PATH, "a", encoding="utf-8") as f:
+            for country, a in fresh:
+                rec = {
+                    "detected_at": now,
+                    "country": country,
+                    "tag": a.get("tag", ""),
+                    "region": a.get("region", ""),
+                    "infra": bool(a.get("infra")),
+                    "title": a.get("title", ""),
+                    "source": a.get("source", ""),
+                    "link": a.get("link", ""),
+                }
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def event_key(country, a, day):
     """중복방지 단위: 같은 국가·위험유형·지역은 하루 1회만 발송.
     (구글뉴스가 같은 사건을 매체·URL만 바꿔 계속 물어와도 반복 발송 안 됨.)"""
@@ -269,6 +298,7 @@ def run_once(cfg, dry_run=False):
     if not fresh:
         log(f"[{ts}] 새 경고 없음 (경고 기사 총 {len(crit)}건, 오늘 발송분과 중복).")
         return
+    append_history(fresh)   # 발송 전에 이력부터 남긴다(발송 실패해도 기록 보존)
     subject, text, html = build_email(cfg, fresh)
     if dry_run:
         log(f"[{ts}] (DRY-RUN) 발송할 메일:\n{'='*60}\n{subject}\n{'-'*60}\n{text}\n{'='*60}")

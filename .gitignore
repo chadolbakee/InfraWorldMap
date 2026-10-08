@@ -5,3 +5,4 @@ __pycache__/
 mail_config.json
 alert_seen.json
 alert_mailer.log
+alert_history.jsonl
