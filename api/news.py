@@ -570,6 +570,37 @@ def dedupe_by_tag(articles):
     return kept
 
 
+# 가해국(actor) 공습 판별
+#  감시국이 '공격을 당한 쪽'이 아니라 '공격을 한 쪽'으로 쓰인 기사를 가려낸다.
+#  예) "UAE drone strike killed Somali family in Puntland" -> UAE는 가해자(발생지는 소말리아)
+_ACTOR_STRIKE_NOUN = (r"(?:(?:drone|air|aerial|missile|rocket|naval|military)\s+)*"
+                      r"(?:strike|strikes|airstrike|airstrikes|air\s+strike|"
+                      r"air\s+raid|raid|raids|bombing|shelling|offensive|assault|"
+                      r"forces|military|troops|warplanes|jets|coalition)")
+_VICTIM_VERB = r"hit|struck|targeted|attacked|bombed|shelled|damaged|destroyed"
+
+
+def is_actor_strike(text, country):
+    """감시국이 공습의 '가해자'로 쓰였고, 자국이 '당한' 신호가 없으면 True."""
+    aliases = LOCATION_ALIASES.get(country)
+    if not aliases:
+        return False
+    alt = "|".join(re.escape(a) for a in aliases)
+    actor = re.compile(
+        r"\b(?:" + alt + r")(?:['’]s|-led|-backed)?\s+" + _ACTOR_STRIKE_NOUN + r"\b",
+        re.I)
+    if not actor.search(text):
+        return False
+    # 그 나라가 '당한' 신호(…on/against <국가>, <국가>…hit/struck 등)가 있으면 취소
+    victim = re.compile(
+        r"\b(?:on|against|upon|into|near|hits?|striking|targeting)\s+(?:the\s+)?(?:"
+        + alt + r")\b"
+        r"|\b(?:" + alt + r")(?:['’]s)?\s+(?:\w+\s+){0,3}(?:" + _VICTIM_VERB + r")\b"
+        r"|\b(?:" + alt + r")\s+(?:came under|under\s+attack|under\s+fire)\b",
+        re.I)
+    return not victim.search(text)
+
+
 def fetch_country(country, refinery_ok=None):
     if refinery_ok is None:
         refinery_ok = country in REFINERY_REGIONS
@@ -629,6 +660,11 @@ def fetch_country(country, refinery_ok=None):
                       or (_tag == "지진" and _MAG_RE.search(headline)))
             if sev == "critical" and not infra and not severe:
                 sev = "warning"
+            # 가해국 공습 강등: 감시국이 '공격 주체'이고 자국 피해·인프라 신호가 없으면
+            #  우리 자산과 무관하므로 정상으로 내린다. (공습·테러 계열에만 보수적 적용)
+            if sev in ("critical", "warning") and _tag in ("공습", "테러") \
+                    and not infra and is_actor_strike(headline, country):
+                sev = "normal"
             if level_rank[sev] > level_rank[worst]:
                 worst = sev
             region = detect_city(headline, country) or ""
